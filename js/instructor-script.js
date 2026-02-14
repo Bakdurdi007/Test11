@@ -23,7 +23,7 @@ function checkSession() {
     if (nameEl) nameEl.innerText = session.full_name;
 }
 
-// Chiqish funksiyasi (Konsoldagi xatoni tuzatish uchun)
+// Chiqish funksiyasi
 function logout() {
     confirmLogout();
 }
@@ -138,25 +138,45 @@ async function confirmService() {
 
     const session = JSON.parse(localStorage.getItem('inst_session'));
 
-    // 1. IS_ACTIVE NI FALSE QILISH (Supabase UPDATE)
+    // 1. Vaqt hisob-kitoblari
+    const now = new Date(); // Skanerlangan vaqt (scanner_data uchun)
+    const hoursToAdding = Number(currentStudent.hours);
+    const finishDate = new Date(now.getTime() + (hoursToAdding * 60 * 60 * 1000)); // Hozirgi vaqt + chekdagi soat
+
+    // 2. IS_ACTIVE NI FALSE QILISH
     const { error: updateError } = await _supabase
         .from('school_services')
         .update({ is_active: false })
         .eq('unique_id', currentStudent.unique_id);
 
     if (updateError) {
-        alert("Bazada o'zgartirish rad etildi! Supabase-da UPDATE policy ochiqligini tekshiring.");
+        alert("Bazada o'zgartirish rad etildi!");
         if(startBtn) { startBtn.disabled = false; startBtn.innerText = "BOSHLASH"; }
         return;
     }
 
-    // 2. Instruktor statistikasini yangilash
+    // 3. Instruktor ma'lumotlarini olish (Mashina raqami uchun)
     const { data: inst } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
 
-    const newHours = (inst.daily_hours || 0) + Number(currentStudent.hours);
+    // 4. TICKETS jadvaliga yozish
+    const { error: ticketError } = await _supabase.from('tickets').insert([{
+        unique_id: currentStudent.unique_id,
+        scanner_data: now.toISOString(), // Skanerlangan vaqt
+        instruktor_id: session.id,
+        car_number: inst ? inst.car_number : 'Nomalum', // Instruktor mashina raqami
+        created_date: currentStudent.created_at, // Chek yaratilgan sana
+        finish_time: finishDate.toISOString() // Chek tugash vaqti
+    }]);
+
+    if (ticketError) {
+        console.error("Ticket yozishda xato:", ticketError.message);
+    }
+
+    // 5. Instruktor statistikasini yangilash
+    const newHours = (inst.daily_hours || 0) + hoursToAdding;
     const newClients = (inst.total_clients || 0) + 1;
     const rate = newHours > 200 ? 45000 : 40000;
-    const newEarned = (inst.earned_money || 0) + (Number(currentStudent.hours) * rate);
+    const newEarned = (inst.earned_money || 0) + (hoursToAdding * rate);
 
     await _supabase.from('instructors').update({
         daily_hours: newHours,
@@ -164,7 +184,7 @@ async function confirmService() {
         earned_money: newEarned
     }).eq('id', session.id);
 
-    // 3. Tarixga saqlash
+    // 6. Tarixga saqlash (eskicha tartibda ham qolaversin)
     await _supabase.from('services_history').insert([{
         instructor_id: session.id,
         student_name: currentStudent.full_name,
