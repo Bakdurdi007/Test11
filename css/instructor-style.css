@@ -4,248 +4,68 @@
     --accent: #38bdf8;
     --text: #f8fafc;
     --success: #4ade80;
-    --danger: #f87171; /* Chiqish tugmasi uchun */
+    --danger: #ef4444; /* Yorqin qizil */
 }
 
-/* Umumiy sozlamalar */
 body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    overflow: hidden;
-    -webkit-tap-highlight-color: transparent; /* Mobil teginishdagi ko'k rangni olib tashlaydi */
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: sans-serif; overflow: hidden;
 }
 
-.app-container {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-}
+.app-container { display: flex; flex-direction: column; height: 100vh; }
 
-/* Header */
 .app-header {
-    padding: 15px 20px;
-    background: var(--card-bg);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    padding: 15px 20px; background: var(--card-bg);
+    display: flex; justify-content: space-between; align-items: center;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(10px);
 }
 
-.user-info h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    color: var(--text);
+/* Tepadagi Qizil Chiqish Tugmasi */
+.btn-logout-header {
+    background: var(--danger);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 13px;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(239, 68, 68, 0.2);
 }
 
-.status-online {
-    font-size: 0.75rem;
-    color: var(--success);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
+.app-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 90px; }
 
-.status-online::before {
-    content: '';
-    width: 8px;
-    height: 8px;
-    background: var(--success);
-    border-radius: 50%;
-    display: inline-block;
-    box-shadow: 0 0 8px var(--success);
-}
+#reader { width: 100% !important; border-radius: 20px; overflow: hidden; border: 2px solid var(--accent) !important; }
 
-/* Kontent maydoni */
-.app-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 15px;
-    padding-bottom: 90px; /* Navigatsiya to'sib qo'ymasligi uchun */
-}
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.stat-card { background: var(--card-bg); padding: 20px; border-radius: 18px; text-align: center; }
+.stat-card.accent { grid-column: span 2; border: 1px solid var(--accent); }
 
-/* Skaner dizayni */
-#reader {
-    width: 100% !important;
-    border-radius: 20px;
-    overflow: hidden;
-    border: 2px solid rgba(56, 189, 248, 0.3) !important;
-    background: #000;
-}
-
-.scanner-card {
-    background: var(--card-bg);
-    padding: 10px;
-    border-radius: 25px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-}
-
-.hint {
-    text-align: center;
-    color: #94a3b8;
-    font-size: 0.9rem;
-    margin-top: 15px;
-}
-
-/* Statistika kartalari */
-.stats-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-}
-
-.stat-card {
-    background: var(--card-bg);
-    padding: 20px;
-    border-radius: 18px;
-    text-align: center;
-    border: 1px solid rgba(255,255,255,0.05);
-}
-
-.stat-card.accent {
-    grid-column: span 2;
-    border: 1px solid rgba(56, 189, 248, 0.3);
-    background: linear-gradient(145deg, #1e293b, #111b2d);
-}
-
-.stat-card .label {
-    display: block;
-    color: #94a3b8;
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
-}
-
-.stat-card h2 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--accent);
-}
-
-/* Bottom Navigation (Mobil menyu) */
 .bottom-nav {
-    position: fixed;
-    bottom: 0;
-    width: 100%;
-    height: 75px;
-    background: rgba(30, 41, 59, 0.95);
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(15px);
-    padding-bottom: env(safe-area-inset-bottom); /* iPhone-lar uchun xavfsiz hudud */
+    position: fixed; bottom: 0; width: 100%; height: 75px;
+    background: var(--card-bg); display: flex; justify-content: space-around;
+    align-items: center; border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .nav-item {
-    background: none;
-    border: none;
-    color: #64748b;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    width: 20%;
-    height: 100%;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
+    background: none; border: none; color: #64748b;
+    display: flex; flex-direction: column; align-items: center; width: 33%;
 }
 
-.nav-item .icon {
-    font-size: 22px;
-    margin-bottom: 4px;
-    transition: transform 0.3s;
-}
+.nav-item.active { color: var(--accent); }
+.nav-item .icon { font-size: 22px; margin-bottom: 4px; }
 
-.nav-item span:not(.icon) {
-    font-size: 11px;
-    font-weight: 500;
-}
-
-/* Aktiv menyu holati */
-.nav-item.active {
-    color: var(--accent);
-}
-
-.nav-item.active .icon {
-    transform: translateY(-5px);
-    filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
-}
-
-.nav-item.active::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    width: 30px;
-    height: 3px;
-    background: var(--accent);
-    border-radius: 0 0 10px 10px;
-}
-
-/* Chiqish (Logout) tugmasi dizayni */
-.nav-item.logout {
-    color: var(--danger);
-    opacity: 0.8;
-}
-
-.nav-item.logout:active {
-    background: rgba(248, 113, 113, 0.1);
-    border-radius: 15px;
-}
-
-/* Modal dizayni */
+/* Modal */
 .modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(15, 23, 42, 0.9);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    backdrop-filter: blur(8px);
-    z-index: 2000;
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(15, 23, 42, 0.95); display: none; align-items: center; justify-content: center; z-index: 2000;
 }
 
-.modal-content {
-    background: var(--card-bg);
-    width: 85%;
-    padding: 25px;
-    border-radius: 24px;
-    border: 1px solid rgba(56, 189, 248, 0.2);
-    box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-    animation: slideUp 0.3s ease-out;
-}
+.modal-content { background: var(--card-bg); width: 85%; padding: 25px; border-radius: 24px; text-align: center; }
 
-@keyframes slideUp {
-    from { transform: translateY(50px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-
-.modal-footer {
-    display: flex;
-    gap: 10px;
-    margin-top: 20px;
-}
-
-.modal-footer button {
-    flex: 1;
-    padding: 12px;
-    border-radius: 12px;
-    border: none;
-    font-weight: 600;
-    font-size: 14px;
-}
+.modal-footer { display: flex; gap: 10px; margin-top: 20px; }
+.modal-footer button { flex: 1; padding: 12px; border-radius: 12px; border: none; font-weight: bold; }
 
 .btn-confirm { background: var(--success); color: #064e3b; }
+.btn-danger-modal { background: var(--danger); color: white; }
 .btn-cancel { background: #334155; color: white; }
-
-/* Skrollni yashirish */
-::-webkit-scrollbar {
-    width: 0;
-    background: transparent;
-}
