@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instruktor Paneli</title>
+    <link rel="stylesheet" href="css/instructor-style.css">
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="app-container">
+    <header class="app-header">
+        <div class="user-info">
+            <h3 id="inst-name">Yuklanmoqda...</h3>
+            <span id="inst-status" class="status-online">Online</span>
+        </div>
+        <button onclick="logout()" class="btn-logout">Chiqish</button>
+    </header>
+
+    <main class="app-content">
+        <section id="sec-scanner" class="inst-section">
+            <div class="card scanner-card">
+                <div id="reader"></div>
+                <p class="hint">O'quvchi chekidagi QR kodni ramka ichiga keltiring</p>
+            </div>
+        </section>
+
+        <section id="sec-stats" class="inst-section" style="display:none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="label">Ishlagan soat</span>
+                    <h2 id="total-hours">0</h2>
+                </div>
+                <div class="stat-card">
+                    <span class="label">Mijozlar soni</span>
+                    <h2 id="total-clients">0</h2>
+                </div>
+                <div class="stat-card accent">
+                    <span class="label">Daromad (Taxminiy)</span>
+                    <h2 id="estimated-salary">0 UZS</h2>
+                </div>
+            </div>
+        </section>
+
+        <section id="sec-clients" class="inst-section" style="display:none;">
+            <div class="list-container">
+                <h3>Xizmat ko'rsatilgan mijozlar</h3>
+                <div id="client-list" class="client-cards">
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <nav class="bottom-nav">
+        <button onclick="switchTab('scanner')" class="nav-item active">
+            <span class="icon">📷</span>
+            <span>Skaner</span>
+        </button>
+        <button onclick="switchTab('stats')" class="nav-item">
+            <span class="icon">📊</span>
+            <span>Hisob</span>
+        </button>
+        <button onclick="switchTab('clients')" class="nav-item">
+            <span class="icon">👥</span>
+            <span>Mijozlar</span>
+        </button>
+    </nav>
+</div>
+
+<div id="studentModal" class="modal">
+    <div class="modal-content">
+        <div id="modal-data"></div>
+        <div class="modal-footer">
+            <button onclick="confirmService()" class="btn-confirm">Xizmatni tasdiqlash</button>
+            <button onclick="closeModal()" class="btn-cancel">Yopish</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/instructor-script.js"></script>
+</body>
+</html>

@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boshqaruv Paneli | AvtoSchool System</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        (function() {
+            const session = localStorage.getItem("admin_session");
+            if (!session) {
+                window.location.replace("index.html");
+            } else {
+                const userData = JSON.parse(session);
+                if (!userData.isLoggedIn) {
+                    window.location.replace("index.html");
+                }
+            }
+        })();
+    </script>
+    <style>
+        .dashboard-section .input-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .dashboard-section .input-grid .group {
+            width: 100%;
+        }
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-badge.active { background: #dcfce7; color: #166534; }
+        .status-badge.inactive { background: #fee2e2; color: #991b1b; }
+
+        /* Modal Styles */
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(4px);
+        }
+        .modal-content {
+            background: #fff;
+            padding: 25px;
+            border-radius: 12px;
+            width: 450px;
+            max-width: 90%;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+        .action-btn {
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 16px;
+            margin: 0 4px;
+            padding: 5px;
+            border-radius: 4px;
+            transition: 0.2s;
+        }
+        .action-btn:hover {
+            background-color: #f3f4f6;
+            transform: scale(1.1);
+        }
+        .inst-view-card p {
+            margin: 12px 0;
+            border-bottom: 1px solid #f1f5f9;
+            padding-bottom: 6px;
+            font-size: 14px;
+        }
+        .inst-view-card b {
+            color: #475569;
+            width: 120px;
+            display: inline-block;
+        }
+        .modal-footer {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <nav class="sidebar">
+        <div class="logo">
+            <h2>Index Avtodrom</h2>
+        </div>
+        <ul>
+            <li class="nav-item active" onclick="showSection('asosiy')">Adminlar</li>
+            <li class="nav-item" onclick="showSection('chek')">Chek chiqarish</li>
+            <li class="nav-item" onclick="showSection('avtomaktab')">Avtomaktab</li>
+            <li class="nav-item" onclick="showSection('instruktor')">Instruktor</li>
+            <li class="nav-item" onclick="showSection('hisobot')">Hisobot</li>
+            <li id="logout-btn" style="cursor: pointer; color: #f87171; margin-top: 20px;">Chiqish</li>
+        </ul>
+    </nav>
+
+    <main class="content">
+        <header>
+            <h1 id="section-title">Asosiy</h1>
+            <div class="user-info">
+                <span id="admin-name">Yuklanmoqda...</span>
+            </div>
+        </header>
+
+        <section id="sec-asosiy" class="dashboard-section">
+            <div class="stats">
+                <div class="card">
+                    <h3>Adminlar soni</h3>
+                    <p id="admin-count">0</p>
+                </div>
+                <div class="card">
+                    <h3>Holat</h3>
+                    <p id="db-status">Bog'lanmoqda...</p>
+                </div>
+            </div>
+            <div class="table-container card">
+                <h3>Tizim adminlari</h3>
+                <table>
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Login</th>
+                        <th>Yaratilgan vaqt</th>
+                    </tr>
+                    </thead>
+                    <tbody id="admin-table-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="sec-chek" class="dashboard-section" style="display:none;">
+            <div class="split-container">
+                <div class="form-side card" style="flex: 0 0 350px;">
+                    <h3>O'quvchini ro'yxatga olish</h3>
+                    <form id="checkForm">
+                        <div class="input-grid">
+                            <div class="group">
+                                <label>F.I.O</label>
+                                <input type="text" id="fullName" placeholder="Ism va Sharif" required>
+                            </div>
+                            <div class="group">
+                                <label>O'quv markaz</label>
+                                <select id="centerName" required>
+                                    <option value="">Tanlang...</option>
+                                </select>
+                            </div>
+                            <div class="group">
+                                <label>Toifa</label>
+                                <select id="directionCategory" required>
+                                    <option value="A toifa">A toifa</option>
+                                    <option value="B toifa">B toifa</option>
+                                    <option value="C toifa">C toifa</option>
+                                    <option value="BC toifa">BC toifa</option>
+                                    <option value="CD toifa">CD toifa</option>
+                                </select>
+                            </div>
+                            <div class="group">
+                                <label>Guruh</label>
+                                <input type="text" id="groupName" placeholder="Guruh raqami" required>
+                            </div>
+                            <div class="group">
+                                <label>Shug'ullanish soati</label>
+                                <select id="hours" required>
+                                    <option value="1">1 soat</option>
+                                    <option value="2">2 soat</option>
+                                    <option value="3">3 soat</option>
+                                    <option value="4">4 soat</option>
+                                    <option value="5">5 soat</option>
+                                    <option value="6">6 soat</option>
+                                    <option value="7">7 soat</option>
+                                    <option value="8">8 soat</option>
+                                </select>
+                            </div>
+                            <div class="group">
+                                <label>To'lov miqdori</label>
+                                <input type="number" id="paymentAmount" placeholder="Masalan: 50000" required>
+                            </div>
+                            <div class="group">
+                                <label>To'lov shakli</label>
+                                <select id="paymentType" required>
+                                    <option value="Naqd">Naqd</option>
+                                    <option value="Karta">Karta</option>
+                                    <option value="Pul o'tkazish">Pul o'tkazish</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-save" style="margin-top: 20px;">SAQLASH VA CHEK CHIQARISH</button>
+                    </form>
+                </div>
+
+                <div class="list-side card">
+                    <h3>Barcha ro'yxatga olinganlar</h3>
+                    <div class="table-scroll">
+                        <table class="modern-table">
+                            <thead>
+                            <tr>
+                                <th>F.I.O</th>
+                                <th>Markaz</th>
+                                <th>Toifa</th>
+                                <th>Guruh</th>
+                                <th>Soat</th>
+                                <th>Summa</th>
+                                <th>Tur</th>
+                                <th>Vaqt</th>
+                            </tr>
+                            </thead>
+                            <tbody id="services-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="sec-avtomaktab" class="dashboard-section" style="display:none;">
+            <div class="split-container">
+                <div class="form-side card" style="flex: 0 0 350px;">
+                    <h3>Yangi o'quv markazi</h3>
+                    <form id="centerForm">
+                        <div class="input-grid">
+                            <div class="group">
+                                <label>O'quv markaz nomi</label>
+                                <input type="text" id="c_name" placeholder="Markaz nomini kiriting" required>
+                            </div>
+                            <div class="group">
+                                <label>Hamkorlik turi</label>
+                                <select id="c_collab" required>
+                                    <option value="Filial">Filial</option>
+                                    <option value="Hamkor">Hamkor</option>
+                                </select>
+                            </div>
+                            <div class="group">
+                                <label>O'quvchilar soni</label>
+                                <input type="number" id="c_students" placeholder="0" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-save" style="background: var(--accent-color); margin-top: 20px;">MARKAZNI QO'SHISH</button>
+                    </form>
+                </div>
+
+                <div class="list-side card">
+                    <h3>Mavjud o'quv markazlari</h3>
+                    <div class="table-scroll">
+                        <table class="modern-table">
+                            <thead>
+                            <tr>
+                                <th>Nomi</th>
+                                <th>Hamkorlik</th>
+                                <th>Soni</th>
+                                <th>Sana</th>
+                            </tr>
+                            </thead>
+                            <tbody id="centers-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="sec-instruktor" class="dashboard-section" style="display:none;">
+            <div class="split-container">
+                <div class="form-side card" style="flex: 0 0 350px;">
+                    <h3 id="inst-form-title">Yangi instruktor</h3>
+                    <form id="instructorForm">
+                        <input type="hidden" id="inst_id"> <div class="input-grid">
+                        <div class="group">
+                            <label>F.I.O</label>
+                            <input type="text" id="inst_fullName" placeholder="Ism va Familiya" required>
+                        </div>
+                        <div class="group">
+                            <label>Mashina raqami</label>
+                            <input type="text" id="inst_carNumber" placeholder="01 A 001 AA" required>
+                        </div>
+                        <div class="group">
+                            <label>Qayerdan</label>
+                            <select id="inst_source" required>
+                                <option value="Filial hodimi">Filial hodimi</option>
+                                <option value="Shartnoma asosida">Shartnoma asosida</option>
+                            </select>
+                        </div>
+                        <div class="group">
+                            <label>Login</label>
+                            <input type="text" id="inst_login" placeholder="Login" required>
+                        </div>
+                        <div class="group">
+                            <label>Parol</label>
+                            <input type="password" id="inst_password" placeholder="Parol" required>
+                        </div>
+                        <div class="group">
+                            <label>Status</label>
+                            <select id="inst_status" required>
+                                <option value="active">Faol</option>
+                                <option value="inactive">Nofaol</option>
+                            </select>
+                        </div>
+                    </div>
+                        <button type="submit" id="inst_submit_btn" class="btn-save" style="background: #10b981; margin-top: 20px;">SAQLASH</button>
+                        <button type="button" id="inst_cancel_btn" style="display:none; background: #6b7280; margin-top: 10px;" class="btn-save">BEKOR QILISH</button>
+                    </form>
+                </div>
+
+                <div class="list-side card">
+                    <h3>Instruktorlar ro'yxati</h3>
+                    <div class="table-scroll">
+                        <table class="modern-table">
+                            <thead>
+                            <tr>
+                                <th>F.I.O</th>
+                                <th>Mashina</th>
+                                <th>Qayerdan</th>
+                                <th>Kunlik (s)</th>
+                                <th>Daromad</th>
+                                <th>Holat</th>
+                                <th>Amallar</th>
+                            </tr>
+                            </thead>
+                            <tbody id="instructors-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="sec-hisobot" class="dashboard-section" style="display:none;">
+            <div class="card">
+                <h3>Ish faoliyati hisoboti</h3>
+                <p>Tez kunda bu yerda statistika chiqadi.</p>
+            </div>
+        </section>
+
+    </main>
+</div>
+
+<div id="instModal" class="modal">
+    <div class="modal-content">
+        <div id="modal-body">
+        </div>
+    </div>
+</div>
+
+<script src="js/script.js"></script>
+</body>
+</html>
