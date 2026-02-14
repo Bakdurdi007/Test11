@@ -2,7 +2,7 @@
 <html lang="uz">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Instruktor Paneli</title>
     <link rel="stylesheet" href="css/instructor-style.css">
     <script src="https://unpkg.com/html5-qrcode"></script>
@@ -25,6 +25,10 @@
                 <div id="reader"></div>
                 <p class="hint">O'quvchi chekidagi QR kodni ramka ichiga keltiring</p>
             </div>
+
+            <div id="scan-feedback" style="text-align: center; margin-top: 20px; color: var(--accent); display: none;">
+                Skanerlanmoqda...
+            </div>
         </section>
 
         <section id="sec-stats" class="inst-section" style="display:none;">
@@ -38,43 +42,54 @@
                     <h2 id="total-clients">0</h2>
                 </div>
                 <div class="stat-card accent">
-                    <span class="label">Daromad (Taxminiy)</span>
+                    <span class="label">Daromad (Hisoblangan)</span>
                     <h2 id="estimated-salary">0 UZS</h2>
+                    <p style="font-size: 0.7rem; color: #94a3b8; margin-top: 5px;">
+                        * 200 soatdan ko'pga 45,000 so'm/soat
+                    </p>
                 </div>
             </div>
         </section>
 
         <section id="sec-clients" class="inst-section" style="display:none;">
             <div class="list-container">
-                <h3>Xizmat ko'rsatilgan mijozlar</h3>
+                <h3 style="margin-bottom: 15px; border-left: 3px solid var(--accent); padding-left: 10px;">
+                    Yaqindagi mijozlar
+                </h3>
                 <div id="client-list" class="client-cards">
+                    <p style="color: #94a3b8; text-align: center; margin-top: 20px;">Hozircha ma'lumot yo'q</p>
                 </div>
             </div>
         </section>
     </main>
 
     <nav class="bottom-nav">
-        <button onclick="switchTab('scanner')" class="nav-item active">
+        <button onclick="switchTab('scanner')" id="nav-scanner" class="nav-item active">
             <span class="icon">📷</span>
             <span>Skaner</span>
         </button>
-        <button onclick="switchTab('stats')" class="nav-item">
+        <button onclick="switchTab('stats')" id="nav-stats" class="nav-item">
             <span class="icon">📊</span>
             <span>Hisob</span>
         </button>
-        <button onclick="switchTab('clients')" class="nav-item">
+        <button onclick="switchTab('clients')" id="nav-clients" class="nav-item">
             <span class="icon">👥</span>
             <span>Mijozlar</span>
+        </button>
+        <button onclick="logout()" class="nav-item logout">
+            <span class="icon">🚪</span>
+            <span>Chiqish</span>
         </button>
     </nav>
 </div>
 
 <div id="studentModal" class="modal">
     <div class="modal-content">
-        <div id="modal-data"></div>
+        <div id="modal-data">
+        </div>
         <div class="modal-footer">
-            <button onclick="confirmService()" class="btn-confirm">Xizmatni tasdiqlash</button>
-            <button onclick="closeModal()" class="btn-cancel">Yopish</button>
+            <button onclick="confirmService()" class="btn-confirm">XIZMATNI TASDIQLASH</button>
+            <button onclick="closeModal()" class="btn-cancel">YOPISH</button>
         </div>
     </div>
 </div>
