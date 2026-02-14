@@ -154,6 +154,7 @@ async function confirmService() {
         total_clients: (inst.total_clients || 0) + 1
     }).eq('id', session.id);
 
+    // misol uchun
     // 3. Tickets jadvaliga yozish
     await _supabase.from('tickets').insert([{
         unique_id: currentStudent.unique_id,
@@ -252,6 +253,7 @@ async function loadClientList() {
         }
     }
 }
+
 
 function closeModal() {
     document.getElementById('studentModal').style.display = 'none';
