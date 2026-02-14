@@ -89,7 +89,7 @@ async function loadServicesTable() {
                     <td>${row.group}</td>
                     <td>${row.hours} soat</td>
                     <td>${Number(row.payment_amount).toLocaleString()}</td>
-                    <td><span class="badge">${row.payment_type}</span></td>
+                    <td><span class="badge ${row.is_active ? 'active-badge' : 'used-badge'}" style="background: ${row.is_active ? '#10b981' : '#64748b'}; padding: 4px 8px; border-radius: 4px; color: white; font-size: 10px;">${row.is_active ? 'Active' : 'Used'}</span></td>
                     <td>${new Date(row.created_at).toLocaleTimeString()}</td>
                 </tr>
             `).join('');
@@ -115,7 +115,7 @@ async function fetchCentersList() {
     } catch (err) { console.error(err); }
 }
 
-// 8. Instruktorlar ro'yxatini yuklash (YANGILANGAN - Amallar bilan)
+// 8. Instruktorlar ro'yxatini yuklash
 async function fetchInstructorsList() {
     try {
         const { data, error } = await supabaseClient
@@ -144,44 +144,21 @@ async function fetchInstructorsList() {
     } catch (err) { console.error("Instruktorlarni yuklashda xato:", err); }
 }
 
-// 12. Instruktor Ma'lumotlarini Ko'rish (DARK MODE moslashtirilgan)
+// 12. Instruktor Ma'lumotlarini Ko'rish
 function viewInstructor(inst) {
     const modal = document.getElementById('instModal');
     const body = document.getElementById('modal-body');
-
     body.innerHTML = `
         <div class="inst-view-card" style="color: #f1f5f9;">
             <h2 style="text-align:center; color:#38bdf8; margin-bottom:20px; border-bottom: 2px solid #334155; padding-bottom: 10px;">Instruktor Ma'lumotlari</h2>
             <div style="display: flex; flex-direction: column; gap: 12px;">
-                <p style="border-bottom: 1px solid #334155; padding-bottom: 5px; display: flex; justify-content: space-between;">
-                    <b style="color: #94a3b8;">F.I.O:</b> <span>${inst.full_name}</span>
-                </p>
-                <p style="border-bottom: 1px solid #334155; padding-bottom: 5px; display: flex; justify-content: space-between;">
-                    <b style="color: #94a3b8;">Mashina:</b> <span>${inst.car_number}</span>
-                </p>
-                <p style="border-bottom: 1px solid #334155; padding-bottom: 5px; display: flex; justify-content: space-between;">
-                    <b style="color: #94a3b8;">Qayerdan:</b> <span>${inst.source || 'Noma\'lum'}</span>
-                </p>
-                <p style="border-bottom: 1px solid #334155; padding-bottom: 5px; display: flex; justify-content: space-between;">
-                    <b style="color: #94a3b8;">Login:</b> <span>${inst.login}</span>
-                </p>
-                <p style="border-bottom: 1px solid #334155; padding-bottom: 5px; display: flex; justify-content: space-between;">
-                    <b style="color: #94a3b8;">Parol:</b> <span>${inst.password}</span>
-                </p>
-                <p style="border-bottom: 1px solid #334155; padding-bottom: 5px; display: flex; justify-content: space-between;">
-                    <b style="color: #94a3b8;">Status:</b> <span>${inst.status === 'active' ? 'Faol ✅' : 'Nofaol ❌'}</span>
-                </p>
-                <p style="border-bottom: 1px solid #334155; padding-bottom: 5px; display: flex; justify-content: space-between;">
-                    <b style="color: #94a3b8;">Kunlik soat:</b> <span>${inst.daily_hours || 0} s</span>
-                </p>
-                <p style="border-bottom: 1px solid #334155; padding-bottom: 5px; display: flex; justify-content: space-between;">
-                    <b style="color: #94a3b8;">Jami daromad:</b> <span>${Number(inst.earned_money || 0).toLocaleString()} UZS</span>
-                </p>
+                <p style="display: flex; justify-content: space-between;"><b>F.I.O:</b> <span>${inst.full_name}</span></p>
+                <p style="display: flex; justify-content: space-between;"><b>Mashina:</b> <span>${inst.car_number}</span></p>
+                <p style="display: flex; justify-content: space-between;"><b>Kunlik soat:</b> <span>${inst.daily_hours || 0} s</span></p>
+                <p style="display: flex; justify-content: space-between;"><b>Jami daromad:</b> <span>${Number(inst.earned_money || 0).toLocaleString()} UZS</span></p>
             </div>
         </div>
-        <div class="modal-footer" style="margin-top: 25px;">
-            <button onclick="closeModal()" class="btn-save" style="background:#475569; width: 100%;">YOPISH</button>
-        </div>
+        <div class="modal-footer" style="margin-top: 25px;"><button onclick="closeModal()" class="btn-save" style="background:#475569; width: 100%;">YOPISH</button></div>
     `;
     modal.style.display = 'flex';
 }
@@ -195,45 +172,26 @@ function editInstructor(inst) {
     document.getElementById('inst_login').value = inst.login;
     document.getElementById('inst_password').value = inst.password;
     document.getElementById('inst_status').value = inst.status;
-
     document.getElementById('inst-form-title').innerText = "Tahrirlash: " + inst.full_name;
     document.getElementById('inst_submit_btn').innerText = "O'ZGARTIRISHNI SAQLASH";
     document.getElementById('inst_submit_btn').style.background = "#3b82f6";
     document.getElementById('inst_cancel_btn').style.display = "block";
 }
 
-// 14. O'chirishni tasdiqlash (DARK MODE moslashtirilgan)
+// 14. O'chirishni tasdiqlash
 function confirmDeleteInstructor(id, name) {
     const modal = document.getElementById('instModal');
     const body = document.getElementById('modal-body');
-
-    body.innerHTML = `
-        <div style="text-align:center; padding: 10px; color: #f1f5f9;">
-            <div style="font-size: 60px; margin-bottom: 15px;">⚠️</div>
-            <h3 style="color: #f87171;">Instruktorni o'chirasizmi?</h3>
-            <p style="color:#94a3b8; margin: 15px 0;"><b>${name}</b> barcha ma'lumotlari bazadan butunlay o'chiriladi.</p>
-            <div style="display:flex; gap:12px; margin-top:25px;">
-                <button onclick="deleteInstructor(${id})" class="btn-save" style="background:#ef4444; flex:1;">HA, O'CHIRILSIN</button>
-                <button onclick="closeModal()" class="btn-save" style="background:#22c55e; flex:1;">YO'Q, QOLSIN</button>
-            </div>
-        </div>
-    `;
+    body.innerHTML = `<div style="text-align:center; padding: 10px; color: #f1f5f9;"><h3 style="color: #f87171;">O'chirilsinmi?</h3><p><b>${name}</b></p><div style="display:flex; gap:12px; margin-top:25px;"><button onclick="deleteInstructor(${id})" class="btn-save" style="background:#ef4444; flex:1;">HA</button><button onclick="closeModal()" class="btn-save" style="background:#22c55e; flex:1;">YO'Q</button></div></div>`;
     modal.style.display = 'flex';
 }
 
 async function deleteInstructor(id) {
     const { error } = await supabaseClient.from('instructors').delete().eq('id', id);
-    if (!error) {
-        closeModal();
-        await fetchInstructorsList();
-    } else {
-        alert("Xatolik: " + error.message);
-    }
+    if (!error) { closeModal(); await fetchInstructorsList(); }
 }
 
-function closeModal() {
-    document.getElementById('instModal').style.display = 'none';
-}
+function closeModal() { document.getElementById('instModal').style.display = 'none'; }
 
 function resetInstForm() {
     document.getElementById('instructorForm').reset();
@@ -244,20 +202,21 @@ function resetInstForm() {
     document.getElementById('inst_cancel_btn').style.display = "none";
 }
 
-// 9. Chek chiqarish (QR kod bilan)
+// 9. Chek chiqarish funksiyasi
 function printReceipt(item) {
     const printWindow = window.open('', '', 'width=350,height=600');
-    const qrData = `ID: ${item.id} | O'quvchi: ${item.full_name} | Summa: ${item.payment_amount}`;
+    const qrData = item.unique_id;
 
     printWindow.document.write(`
         <html>
         <head>
             <style>
                 @page { size: 80mm auto; margin: 0; }
-                body { width: 70mm; font-family: 'Courier New', monospace; padding: 5mm; font-size: 12px; line-height: 1.4; }
+                body { width: 70mm; font-family: 'Courier New', monospace; padding: 5mm; font-size: 11px; line-height: 1.4; color: #000; }
                 .text-center { text-align: center; }
                 .hr { border-bottom: 1px dashed #000; margin: 8px 0; }
                 .bold { font-weight: bold; }
+                .status-active { color: green; font-weight: bold; border: 1px solid green; padding: 2px; }
             </style>
         </head>
         <body onload="window.print(); window.close();">
@@ -265,19 +224,23 @@ function printReceipt(item) {
                 <h2 style="margin:0;">AVTO SCHOOL</h2>
                 <p>${item.center_name}</p>
                 <div class="hr"></div>
-                <p class="bold">TO'LOV CHEKI №${item.id}</p>
+                <p class="bold">TO'LOV CHEKI</p>
+                <p>ID: ${item.unique_id}</p>
+                <p>HOLATI: <span class="status-active">ACTIVE ✅</span></p>
             </div>
             <p><span class="bold">O'quvchi:</span> ${item.full_name}</p>
+            <p><span class="bold">Markaz:</span> ${item.center_name}</p>
             <p><span class="bold">Toifa:</span> ${item.direction_category}</p>
             <p><span class="bold">Guruh:</span> ${item.group}</p>
             <p><span class="bold">Soat:</span> ${item.hours} (akademik)</p>
+            <p><span class="bold">Sana:</span> ${new Date(item.created_at).toLocaleString()}</p>
             <div class="hr"></div>
             <h3 class="text-center">SUMMA: ${Number(item.payment_amount).toLocaleString()} UZS</h3>
             <p class="text-center">To'lov turi: ${item.payment_type}</p>
             <div class="hr"></div>
             <div class="text-center">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}">
-                <p style="font-size: 10px; margin-top:5px;">To'lov tasdiqlandi.</p>
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(qrData)}">
+                <p style="font-size: 8px; margin-top:5px;">Unique ID: ${item.unique_id}</p>
             </div>
         </body>
         </html>
@@ -286,31 +249,56 @@ function printReceipt(item) {
 }
 
 // 10. Asosiy Dashboard yuklash
+// 10. Asosiy Dashboard yuklash va Adminlar ro'yxatini chiqarish
 async function initDashboard() {
     checkUserSession();
     try {
-        const { data, error } = await supabaseClient.from('admins').select('*');
-        if (!error && data) {
-            document.getElementById('admin-count').innerText = data.length;
-            document.getElementById('db-status').innerText = "Online";
-            document.getElementById('db-status').style.color = "#4ade80";
+        // Supabase'dan barcha adminlarni olish
+        const { data: admins, error } = await supabaseClient
+            .from('admins')
+            .select('id, login, created_at')
+            .order('created_at', { ascending: false });
 
+        if (error) throw error;
+
+        if (admins) {
+            // 1. Adminlar sonini yangilash
+            const countElement = document.getElementById('admin-count');
+            if (countElement) countElement.innerText = admins.length;
+
+            // 2. Statusni yangilash
+            const statusElement = document.getElementById('db-status');
+            if (statusElement) statusElement.innerText = "Online";
+
+            // 3. JADVALNI TO'LDIRISH
             const tableBody = document.getElementById('admin-table-body');
             if (tableBody) {
-                tableBody.innerHTML = data.map(admin => `
-                    <tr>
-                        <td>${admin.id}</td>
-                        <td>${admin.login}</td>
-                        <td>${new Date(admin.created_at).toLocaleDateString()}</td>
-                    </tr>
-                `).join('');
+                if (admins.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">Adminlar topilmadi</td></tr>';
+                } else {
+                    tableBody.innerHTML = admins.map(admin => `
+                        <tr>
+                            <td>${admin.id}</td>
+                            <td><b>${admin.login}</b></td>
+                            <td>${new Date(admin.created_at).toLocaleString('uz-UZ')}</td>
+                        </tr>
+                    `).join('');
+                }
             }
         }
 
+        // 4. Joriy tizimga kirgan admin ismini ko'rsatish
         const sessionData = JSON.parse(localStorage.getItem("admin_session"));
-        if (sessionData) document.getElementById('admin-name').innerText = "Admin: " + sessionData.login;
+        const adminNameDisplay = document.getElementById('admin-name');
+        if (sessionData && adminNameDisplay) {
+            adminNameDisplay.innerText = "Admin: " + sessionData.login;
+        }
 
-    } catch (err) { console.error("Dashboard yuklashda xato:", err); }
+    } catch (err) {
+        console.error("Dashboard yuklashda xato:", err.message);
+        const statusElement = document.getElementById('db-status');
+        if (statusElement) statusElement.innerText = "Error";
+    }
 }
 
 // 11. Hodisalarni biriktirish
@@ -324,6 +312,9 @@ document.addEventListener('DOMContentLoaded', () => {
         submitBtn.disabled = true;
         submitBtn.innerText = "SAQLANMOQDA...";
 
+        // Unique ID yaratish
+        const uniqueId = 'S-' + Date.now().toString().slice(-6) + Math.floor(Math.random() * 1000);
+
         const formData = {
             full_name: document.getElementById('fullName').value,
             center_name: document.getElementById('centerName').value,
@@ -331,7 +322,9 @@ document.addEventListener('DOMContentLoaded', () => {
             group: document.getElementById('groupName').value,
             hours: parseInt(document.getElementById('hours').value),
             payment_amount: parseFloat(document.getElementById('paymentAmount').value),
-            payment_type: document.getElementById('paymentType').value
+            payment_type: document.getElementById('paymentType').value,
+            unique_id: uniqueId,
+            is_active: true
         };
 
         const { data, error } = await supabaseClient.from('school_services').insert([formData]).select();
@@ -356,22 +349,13 @@ document.addEventListener('DOMContentLoaded', () => {
             students_count: parseInt(document.getElementById('c_students').value)
         };
         const { error } = await supabaseClient.from('centers').insert([centerData]);
-        if (!error) {
-            alert("Markaz muvaffaqiyatli qo'shildi!");
-            e.target.reset();
-            fetchCentersList();
-        } else {
-            alert("Xato: " + error.message);
-        }
+        if (!error) { fetchCentersList(); e.target.reset(); alert("Markaz qo'shildi!"); }
     });
 
-    // Instruktor formasi (INSERT & UPDATE)
+    // Instruktor formasi
     document.getElementById('instructorForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const submitBtn = document.getElementById('inst_submit_btn');
         const instId = document.getElementById('inst_id').value;
-        submitBtn.disabled = true;
-
         const instructorData = {
             full_name: document.getElementById('inst_fullName').value,
             car_number: document.getElementById('inst_carNumber').value,
@@ -381,23 +365,20 @@ document.addEventListener('DOMContentLoaded', () => {
             status: document.getElementById('inst_status').value
         };
 
-        let result;
+        let res;
         if (instId) {
-            // Update
-            result = await supabaseClient.from('instructors').update(instructorData).eq('id', instId);
+            res = await supabaseClient.from('instructors').update(instructorData).eq('id', instId);
         } else {
-            // Insert
-            result = await supabaseClient.from('instructors').insert([{...instructorData, daily_hours: 0, monthly_hours: 0, earned_money: 0}]);
+            res = await supabaseClient.from('instructors').insert([{...instructorData, daily_hours: 0, monthly_hours: 0, earned_money: 0}]);
         }
 
-        if (!result.error) {
-            alert(instId ? "Ma'lumotlar tahrirlandi!" : "Yangi instruktor qo'shildi!");
+        if(!res.error) {
             resetInstForm();
             await fetchInstructorsList();
+            alert("Muvaffaqiyatli saqlandi!");
         } else {
-            alert("Xatolik: " + result.error.message);
+            alert("Xato: " + res.error.message);
         }
-        submitBtn.disabled = false;
     });
 
     document.getElementById('inst_cancel_btn')?.addEventListener('click', resetInstForm);
