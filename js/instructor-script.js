@@ -58,12 +58,10 @@ function initScanner() {
         .catch(err => console.error(err));
 }
 
-// 1. QR kod skaner qilinganda ishlaydigan asosiy funksiya
 async function onScanSuccess(decodedText) {
     if (!isScanning) return;
     isScanning = false;
 
-    // unique_id orqali school_services jadvalidan qidirish
     const { data: service, error } = await _supabase
         .from('school_services')
         .select('*')
@@ -79,13 +77,11 @@ async function onScanSuccess(decodedText) {
     }
 }
 
-// 2. Ma'lumotlarni modal oynada ko'rsatish
 function showStudentModal(service) {
     const modal = document.getElementById('studentModal');
     const dataArea = document.getElementById('modal-data');
     const footerArea = document.getElementById('modal-footer-btns');
 
-    // Agar chek oldin ishlatilgan bo'lsa
     if (service.is_active === false) {
         dataArea.innerHTML = `
             <div style="text-align:center; padding: 20px;">
@@ -94,9 +90,9 @@ function showStudentModal(service) {
                 <p style="font-size:12px; color:#64748b; margin-top:5px;">ID: ${service.unique_id}</p>
             </div>
         `;
+        // Faqat bitta yopish tugmasi
         footerArea.innerHTML = `<button onclick="closeModal()" class="btn-cancel" style="width:100%">YOPISH</button>`;
     } else {
-        // Chek faol bo'lsa ma'lumotlarni chiqarish
         dataArea.innerHTML = `
             <div class="mashgulot-info" style="text-align:left; color:var(--text); line-height:1.8;">
                 <h3 style="color:var(--accent); text-align:center; margin-bottom:15px;">Mashg'ulot ma'lumotlari:</h3>
@@ -109,46 +105,56 @@ function showStudentModal(service) {
                 <p>📅 <b>Sana:</b> ${new Date(service.created_at).toLocaleString()}</p>
             </div>
         `;
+        // Faqat bitta Boshlash tugmasi
         footerArea.innerHTML = `
-            <button onclick="confirmService()" class="btn-confirm" style="background-color:#10b981; color:white; width:100%; padding:12px; border-radius:8px; border:none; font-weight:bold; cursor:pointer;">BOSHLASH</button>
-            <button onclick="closeModal()" class="btn-cancel" style="width:100%; margin-top:10px;">BEKOR QILISH</button>
+            <button id="start-btn" onclick="confirmService()" class="btn-confirm" style="background-color:#10b981; color:white; width:100%; padding:14px; border-radius:10px; border:none; font-weight:bold; cursor:pointer; font-size:16px;">BOSHLASH</button>
         `;
     }
     modal.style.display = 'flex';
 }
 
-// 3. Mashg'ulotni tasdiqlash va chekni yopish
 async function confirmService() {
     if (!currentStudent) return;
+
+    // Tugmani bloklaymiz (ikki marta bosilmasligi uchun)
+    const startBtn = document.getElementById('start-btn');
+    if(startBtn) {
+        startBtn.disabled = true;
+        startBtn.innerText = "YUKLANMOQDA...";
+    }
+
     const session = JSON.parse(localStorage.getItem('inst_session'));
 
     // 1. Chekni o'chirish (is_active = false)
-    const { error: updateError } = await _supabase
+    // .update so'rovini qayta tekshiramiz
+    const { data, error: updateError } = await _supabase
         .from('school_services')
         .update({ is_active: false })
-        .eq('unique_id', currentStudent.unique_id);
+        .eq('unique_id', currentStudent.unique_id)
+        .select(); // Select qilsak o'zgarganini aniq ko'ramiz
 
     if (updateError) {
-        alert("Xatolik yuz berdi: " + updateError.message);
+        alert("Xatolik (is_active): " + updateError.message);
+        if(startBtn) { startBtn.disabled = false; startBtn.innerText = "BOSHLASH"; }
         return;
     }
 
-    // 2. Instruktor statistikasini yangilash
+    // 2. Instruktor ma'lumotlarini olish
     const { data: inst } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
+
     const newHours = (inst.daily_hours || 0) + Number(currentStudent.hours);
     const newClients = (inst.total_clients || 0) + 1;
-
-    // Maosh hisoblash formulasi (o'zingizning kodingizdan olindi)
     const rate = newHours > 200 ? 45000 : 40000;
-    const newEarned = newHours * rate;
+    const newEarned = (inst.earned_money || 0) + (Number(currentStudent.hours) * rate);
 
+    // 3. Instruktor statistikasini yangilash
     await _supabase.from('instructors').update({
         daily_hours: newHours,
         total_clients: newClients,
         earned_money: newEarned
     }).eq('id', session.id);
 
-    // 3. Tarixga yozish
+    // 4. Tarixga yozish
     await _supabase.from('services_history').insert([{
         instructor_id: session.id,
         student_name: currentStudent.full_name,
@@ -162,18 +168,23 @@ async function confirmService() {
 }
 
 async function updateInstStats() {
-    const session = JSON.parse(localStorage.getItem('inst_session'));
-    const { data: inst, error } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
+    const sessionStr = localStorage.getItem('inst_session');
+    if(!sessionStr) return;
+    const session = JSON.parse(sessionStr);
+
+    const { data: inst } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
     if (inst) {
         document.getElementById('total-hours').innerText = inst.daily_hours || 0;
         document.getElementById('total-clients').innerText = inst.total_clients || 0;
-        const rate = (inst.daily_hours || 0) > 200 ? 45000 : 40000;
-        document.getElementById('estimated-salary').innerText = ((inst.daily_hours || 0) * rate).toLocaleString() + " UZS";
+        document.getElementById('estimated-salary').innerText = (inst.earned_money || 0).toLocaleString() + " UZS";
     }
 }
 
 async function loadClientList() {
-    const session = JSON.parse(localStorage.getItem('inst_session'));
+    const sessionStr = localStorage.getItem('inst_session');
+    if(!sessionStr) return;
+    const session = JSON.parse(sessionStr);
+
     const { data } = await _supabase.from('services_history').select('*').eq('instructor_id', session.id).order('created_at', {ascending: false});
     const listDiv = document.getElementById('client-list');
     if (data && data.length > 0) {
