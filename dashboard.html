@@ -371,8 +371,28 @@
 
         <section id="sec-hisobot" class="dashboard-section" style="display:none;">
             <div class="card">
-                <h3>Ish faoliyati hisoboti</h3>
-                <p>Tez kunda bu yerda statistika chiqadi.</p>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3>Jonli Nazorat Paneli (Real-time Monitoring)</h3>
+                    <div id="live-clock" style="font-weight: bold; color: #64748b;"></div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Instruktor</th>
+                            <th>Mashina</th>
+                            <th>Holati</th>
+                            <th>Qolgan vaqt</th>
+                            <th>Amallar</th>
+                            <th>Chek ID</th>
+                        </tr>
+                        </thead>
+                        <tbody id="monitoring-table-body">
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </section>
 

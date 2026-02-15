@@ -169,7 +169,7 @@ async function confirmService() {
     try {
         const session = JSON.parse(localStorage.getItem('inst_session'));
         const hoursFromTicket = Number(currentStudent.hours); // Masalan: 2 soat
-        const minutesToAdd = hoursFromTicket * 60; // Minutga o'tkazish: 120 minut
+        const minutesToAdd = hoursFromTicket * 60; // Minutga o'tkazish
 
         const now = new Date();
         const finishDate = new Date(now.getTime() + (hoursFromTicket * 3600000));
@@ -192,12 +192,12 @@ async function confirmService() {
         let newDaily = isNewDay ? minutesToAdd : (inst.daily_hours || 0) + minutesToAdd;
         let newMonthly = isNewMonth ? minutesToAdd : (inst.monthly_hours || 0) + minutesToAdd;
 
-        // 4. Bazani yangilash
+        // 4. Bazani yangilash (Instruktor holati)
         const { error: updateError } = await _supabase
             .from('instructors')
             .update({
                 status: 'busy',
-                last_finish_time: finishDate.toISOString(), // Xatolik bergan ustun shu yerda
+                last_finish_time: finishDate.toISOString(),
                 daily_hours: newDaily,
                 monthly_hours: newMonthly,
                 earned_money: (inst.earned_money || 0) + (hoursFromTicket * 40000), // Tarif bo'yicha
@@ -207,8 +207,18 @@ async function confirmService() {
 
         if (updateError) throw updateError;
 
-        // 5. Chekni yopish va tarixga yozish
-        await _supabase.from('school_services').update({ is_active: false }).eq('unique_id', currentStudent.unique_id);
+        // 5. Chekni yopish va Nazorat paneli uchun ma'lumotlarni biriktirish
+        // BU YERDA: is_active: false bo'ladi, lekin monitoring ko'rishi uchun id va vaqt yoziladi
+        await _supabase
+            .from('school_services')
+            .update({
+                is_active: false,
+                instructor_id: session.id,            // Monitoring uchun kerak
+                last_finish_time: finishDate.toISOString() // Taymer uchun kerak
+            })
+            .eq('unique_id', currentStudent.unique_id);
+
+        // 6. Tarixga yozish
         await _supabase.from('services_history').insert([{
             instructor_id: session.id,
             student_name: currentStudent.full_name,
@@ -216,6 +226,7 @@ async function confirmService() {
             service_id: currentStudent.unique_id
         }]);
 
+        // Taymerni mobil ilovada ham ishga tushirish
         startTimerDisplay(hoursFromTicket * 3600000);
         closeModal();
         updateInstStats();

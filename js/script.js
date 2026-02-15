@@ -2,6 +2,8 @@
 const SUPABASE_URL = 'https://sqgdmanmnvioijducopi.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxZ2RtYW5tbnZpb2lqZHVjb3BpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4Nzk1ODUsImV4cCI6MjA4NjQ1NTU4NX0.CmP9-bQaxQDAOKnVAlU4tkpRHmFlfXVEW2-tYJ52R90';
 
+let monitoringInterval;
+
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // 2. Sessiyani tekshirish funksiyasi
@@ -23,6 +25,12 @@ async function showSection(sectionId) {
     document.querySelectorAll('.dashboard-section').forEach(sec => {
         sec.style.display = 'none';
     });
+
+    if (sectionId === 'hisobot') {
+        startMonitoring();
+    } else {
+        if (monitoringInterval) clearInterval(monitoringInterval);
+    }
 
     const targetSection = document.getElementById('sec-' + sectionId);
     if (targetSection) {
@@ -639,7 +647,6 @@ function resetInstForm() {
     document.getElementById('inst_cancel_btn').style.display = "none";
 }
 
-
 // 15. Chek hisoboti
 async function generateFinancialReport() {
     const period = document.getElementById('report-period').value;
@@ -785,5 +792,172 @@ async function generateFinancialReport() {
     } catch (err) {
         console.error("Hisobotda xato:", err);
         alert("Hisobot tayyorlashda xatolik yuz berdi.");
+    }
+}
+
+// 16.
+// Global interval o'zgaruvchisi taymerlarni yangilab turish uchun
+async function fetchMonitoringData() {
+    try {
+        // 1. Barcha instruktorlarni olish
+        const { data: instructors, error: instError } = await supabaseClient
+            .from('instructors')
+            .select('*')
+            .order('id', { ascending: true });
+
+        if (instError) throw instError;
+
+        // 2. Faol darslarni olish (Skanerlangan, lekin vaqti hali tugamagan cheklar)
+        // Sharti: last_finish_time hozirgi vaqtdan katta bo'lishi kerak
+        const nowISO = new Date().toISOString();
+        const { data: activeServices, error: serError } = await supabaseClient
+            .from('school_services')
+            .select('*')
+            .gt('last_finish_time', nowISO); // Kelajakda tugaydigan barcha darslar
+
+        if (serError) throw serError;
+
+        const tbody = document.getElementById('monitoring-table-body');
+        if (!tbody) return;
+
+        tbody.innerHTML = instructors.map(inst => {
+            // Ushbu instruktorga tegishli joriy darsni topish
+            const service = activeServices?.find(s => s.instructor_id === inst.id);
+
+            // Mashina raqami dizayni (Filial/Shartnoma)
+            const carClass = inst.source?.includes("Filial") ? "car-badge-filial" : "car-badge-contract";
+
+            // Holatni aniqlash
+            const isBusy = !!service;
+            const statusLabel = isBusy
+                ? `<span class="status-busy">BAND</span>`
+                : `<span class="status-free">BO'SH</span>`;
+
+            let timerHtml = "-";
+            let stopBtn = "-";
+            let checkId = "-";
+
+            if (isBusy) {
+                // Taymer hisoblash
+                const finishTime = new Date(service.last_finish_time).getTime();
+                const now = new Date().getTime();
+                const diff = finishTime - now;
+
+                if (diff > 0) {
+                    const hours = Math.floor(diff / (1000 * 60 * 60));
+                    const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                    const secs = Math.floor((diff % (1000 * 60)) / 1000);
+
+                    // "data-finish" atributi orqali JS intervaliga ma'lumot uzatamiz
+                    timerHtml = `<span class="timer-text" data-finish="${service.last_finish_time}">
+                        ${hours}s ${mins}m ${secs}s
+                    </span>`;
+                } else {
+                    timerHtml = `<span style="color:red; font-weight:bold;">VAQT TUGADI</span>`;
+                }
+
+                // To'xtatish tugmasi va Chek ID (unique_id bo'lsa uni, bo'lmasa ID ni chiqaramiz)
+                stopBtn = `<button class="stop-btn" onclick="stopInstructorService(${inst.id}, ${service.id})">TO'XTATISH</button>`;
+                checkId = `<small style="color:#64748b;">#${service.unique_id || service.id}</small>`;
+            }
+
+            return `
+                <tr>
+                    <td><span style="color:#94a3b8;">${inst.id}</span></td>
+                    <td><b>${inst.full_name}</b></td>
+                    <td><span class="${carClass}">${inst.car_number}</span></td>
+                    <td>${statusLabel}</td>
+                    <td id="timer-${inst.id}">${timerHtml}</td>
+                    <td>${stopBtn}</td>
+                    <td>${checkId}</td>
+                </tr>
+            `;
+        }).join('');
+
+    } catch (err) {
+        console.error("Monitoring yuklashda xato:", err.message);
+    }
+}
+
+
+// Xizmatni to'xtatish va soatlarni hisoblash
+async function stopInstructorService(instId, serviceId) {
+    if (!confirm("Haqiqatan ham jarayonni to'xtatmoqchimisiz? Ishlangan vaqt instruktor hisobiga qo'shiladi.")) return;
+
+    try {
+        // 1. Xizmat ma'lumotlarini olish
+        const { data: service } = await supabaseClient.from('school_services').select('*').eq('id', serviceId).single();
+        const { data: inst } = await supabaseClient.from('instructors').select('*').eq('id', instId).single();
+
+        // 2. Ishlangan vaqtni hisoblash (minutlarda)
+        const startTime = new Date(service.created_at).getTime();
+        const now = new Date().getTime();
+        const workedHours = parseFloat(((now - startTime) / (1000 * 60 * 60)).toFixed(2));
+
+        // 3. Instruktor soatlarini yangilash
+        const newDaily = (inst.daily_hours || 0) + workedHours;
+        const newMonthly = (inst.monthly_hours || 0) + workedHours;
+
+        const { error: updateInstErr } = await supabaseClient
+            .from('instructors')
+            .update({ daily_hours: newDaily, monthly_hours: newMonthly })
+            .eq('id', instId);
+
+        // 4. Xizmatni yopish
+        const { error: updateSerErr } = await supabaseClient
+            .from('school_services')
+            .update({ is_active: false })
+            .eq('id', serviceId);
+
+        if (!updateInstErr && !updateSerErr) {
+            alert(`Jarayon to'xtatildi. Instruktorga ${workedHours} soat qo'shildi.`);
+            fetchMonitoringData();
+        }
+    } catch (err) {
+        alert("Xatolik: " + err.message);
+    }
+}
+
+// Har 1 soniyada taymerlarni va har 30 soniyada bazani yangilash
+function startMonitoring() {
+    if (monitoringInterval) clearInterval(monitoringInterval);
+
+    fetchMonitoringData(); // Birinchi marta yuklash
+
+    monitoringInterval = setInterval(() => {
+        // Faqat taymer matnlarini yangilash (bazaga murojaat qilmasdan)
+        document.querySelectorAll('.timer-text').forEach(el => {
+            const finish = new Date(el.getAttribute('data-finish')).getTime();
+            const now = new Date().getTime();
+            const diff = finish - now;
+
+            if (diff > 0) {
+                const hours = Math.floor(diff / (1000 * 60 * 60));
+                const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                const secs = Math.floor((diff % (1000 * 60)) / 1000);
+                el.innerText = `${hours}s ${mins}m ${secs}s`;
+            } else {
+                el.innerText = "VAQT TUGADI";
+                el.style.color = "red";
+            }
+        });
+    }, 1000);
+}
+
+// 17. Soatlarni 0 ga tushirish mantiqi.
+async function checkAndResetHours() {
+    const lastReset = localStorage.getItem('last_reset_date');
+    const today = new Date().toDateString();
+
+    if (lastReset !== today) {
+        // Yangi kun keldi - Daily soatlarni nolga tushirish
+        await supabaseClient.from('instructors').update({ daily_hours: 0 }).neq('id', 0);
+
+        // Agar yangi oy bo'lsa
+        if (new Date().getDate() === 1) {
+            await supabaseClient.from('instructors').update({ monthly_hours: 0 }).neq('id', 0);
+        }
+
+        localStorage.setItem('last_reset_date', today);
     }
 }

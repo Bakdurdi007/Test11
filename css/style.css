@@ -26,6 +26,12 @@ body {
     width: 100%;
 }
 
+.status-busy { background: #fee2e2 !important; color: #b91c1c !important; border: 1px solid #ef4444; padding: 3px 8px; border-radius: 6px; font-weight: bold; }
+.status-free { background: #dcfce7 !important; color: #15803d !important; border: 1px solid #22c55e; padding: 3px 8px; border-radius: 6px; font-weight: bold; }
+.timer-text { font-family: 'Courier New', monospace; font-weight: bold; color: #3b82f6; font-size: 15px; }
+.stop-btn { background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: 0.3s; }
+.stop-btn:hover { background: #b91c1c; transform: scale(1.05); }
+
 /* Sidebar */
 .sidebar {
     width: 250px;
