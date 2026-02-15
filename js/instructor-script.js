@@ -10,21 +10,67 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Global o'zgaruvchilar
-let currentStudent = null; // Skanerlangan talaba ma'lumotlarini vaqtincha saqlash uchun
-let isScanning = true;     // Skaner faol yoki faol emasligini nazorat qilish
-let activeTimer = null;    // Ishlayotgan taymer obyekti
+let currentStudent = null;
+let isScanning = true;
+let activeTimer = null;
 
 // Sahifa yuklanganda ishga tushadigan asosiy qism
 document.addEventListener('DOMContentLoaded', () => {
-    checkSession();      // 1. Foydalanuvchi tizimga kirganini tekshirish
-    updateInstStats();   // 2. Statistikani (soat, pul) yangilash
-    initScanner();       // 3. QR skanerni ishga tushirish
-    loadClientList();    // 4. Avvalgi mijozlar ro'yxatini yuklash
-    syncActiveLesson();  // 5. Agar dars davom etayotgan bo'lsa, taymerni tiklash
+    checkSession();
+    updateInstStats();
+    initScanner();
+    loadClientList();
+    syncActiveLesson();
+    subscribeToChanges(); // ADMIN TO'XTATISHINI KUZATISH (YANGI)
 });
 
 /**
- * Tizimga kirganlikni tekshirish funksiyasi
+ * ADMIN PANELDA TO'XTATISH TUGMASI BOSILSA REAL-VAQTDA ILG'ASH
+ */
+function subscribeToChanges() {
+    const session = JSON.parse(localStorage.getItem('inst_session'));
+    if (!session) return;
+
+    // Instruktorlar jadvalidagi o'zgarishlarni kuzatamiz
+    _supabase
+        .channel('public:instructors')
+        .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'instructors',
+            filter: `id=eq.${session.id}`
+        }, (payload) => {
+            // Agar admin statusni 'active' ga o'zgartirsa (To'xtatish bossa)
+            if (payload.new.status === 'active' && payload.old.status === 'busy') {
+                console.log("Admin darsni to'xtatdi.");
+                stopProcessLocally();
+            }
+        })
+        .subscribe();
+}
+
+/**
+ * Ilovada darsni mahalliy (local) to'xtatish va holatni tiklash
+ */
+function stopProcessLocally() {
+    if (activeTimer) clearInterval(activeTimer);
+    activeTimer = null;
+    isScanning = true;
+
+    // UI ni yangilash (Taymerni o'chirib skanerni qaytarish)
+    const readerDiv = document.getElementById('reader');
+    if (readerDiv) {
+        readerDiv.innerHTML = ""; // Skaner konteynerini tozalash
+        initScanner(); // Skanerni qayta ishga tushirish
+    }
+
+    updateInstStats();
+    loadClientList();
+    alert("Dars admin tomonidan to'xtatildi yoki yakunlandi.");
+}
+
+/**
+ * Tizimga kirganlikni tekshirish
  */
 function checkSession() {
     const sessionStr = localStorage.getItem('inst_session');
@@ -38,7 +84,7 @@ function checkSession() {
 }
 
 /**
- * Ovozli signallar yaratish
+ * Ovozli signallar
  */
 function playSound(type) {
     try {
@@ -78,13 +124,11 @@ async function syncActiveLesson() {
         if (diff > 0) {
             startTimerDisplay(diff);
         } else {
-            // Agar vaqt o'tib ketgan bo'lsa, avtomatik yopish (to'liq soat hisoblanadi)
             await stopLessonAndCalculate(session.id);
         }
     }
 }
 
-// QR Skaner obyekti
 const html5QrCode = new Html5Qrcode("reader");
 
 function initScanner() {
@@ -96,7 +140,7 @@ async function onScanSuccess(decodedText) {
     if (!isScanning) return;
 
     const session = JSON.parse(localStorage.getItem('inst_session'));
-    const { data: inst } = await _supabase.from('instructors').select('status, last_finish_time').eq('id', session.id).single();
+    const { data: inst } = await _supabase.from('instructors').select('status').eq('id', session.id).single();
 
     if (inst && inst.status === 'busy') {
         alert("Siz hozir bandsiz! Oldin joriy darsni tugatishingiz kerak.");
@@ -142,9 +186,6 @@ function showStudentModal(service) {
     modal.style.display = 'flex';
 }
 
-/**
- * Darsni tasdiqlash - BU YERDA VAQT HISOBLANMAYDI, FAQAT BOSHLANADI
- */
 async function confirmService() {
     if (!currentStudent) return;
     const startBtn = document.getElementById('start-btn');
@@ -157,26 +198,24 @@ async function confirmService() {
         const now = new Date();
         const finishDate = new Date(now.getTime() + (hoursFromTicket * 3600000));
 
-        // 1. Instruktor holatini 'busy' qilish va boshlash vaqtini saqlash
         const { error: updateError } = await _supabase
             .from('instructors')
             .update({
                 status: 'busy',
                 last_finish_time: finishDate.toISOString(),
-                updated_at: now.toISOString() // Dars boshlangan vaqt
+                updated_at: now.toISOString()
             })
             .eq('id', session.id);
 
         if (updateError) throw updateError;
 
-        // 2. Chekni faolsizlantirish
         await _supabase
             .from('school_services')
             .update({
                 is_active: false,
                 instructor_id: session.id,
                 last_finish_time: finishDate.toISOString(),
-                service_start_time: now.toISOString() // Hisob-kitob uchun kerak
+                service_start_time: now.toISOString()
             })
             .eq('unique_id', currentStudent.unique_id);
 
@@ -192,9 +231,6 @@ async function confirmService() {
     }
 }
 
-/**
- * Taymerni ekranga chiqarish
- */
 function startTimerDisplay(durationMs) {
     const readerDiv = document.getElementById('reader');
     isScanning = false;
@@ -226,12 +262,10 @@ function startTimerDisplay(durationMs) {
 }
 
 /**
- * TO'XTATISH VA HAQIQIY ISHLANGAN VAQTNI HISOBLASH
- * Bu funksiya monitoringda to'xtatish tugmasi bosilganda yoki vaqt tugaganda ishlaydi
+ * DARS TUGAGANDA YOKI ADMIN TO'XTATGANDA HISOBLASH
  */
 async function stopLessonAndCalculate(instructorId) {
     try {
-        // 1. Instruktor va uning joriy darsini olish
         const { data: inst } = await _supabase.from('instructors').select('*').eq('id', instructorId).single();
         const { data: service } = await _supabase
             .from('school_services')
@@ -248,22 +282,15 @@ async function stopLessonAndCalculate(instructorId) {
 
         const startTime = new Date(service.service_start_time);
         const now = new Date();
+        let diffMins = Math.floor((now - startTime) / 60000);
 
-        // Haqiqiy o'tgan vaqt (daqiqa)
-        let diffMs = now - startTime;
-        let diffMins = Math.floor(diffMs / 60000);
-
-        // Agar vaqt kutilganidan ko'proq bo'lsa (masalan taymer tugab o'tib ketgan bo'lsa), chekdagi soatdan oshmasligi kerak
         const maxMins = service.hours * 60;
         if (diffMins > maxMins) diffMins = maxMins;
         if (diffMins < 0) diffMins = 0;
 
-        // 2. Statistikani yangilash
-        const lastUpdate = inst.updated_at ? new Date(inst.updated_at) : new Date();
-        const isNewDay = lastUpdate.toDateString() !== now.toDateString();
-
+        const isNewDay = new Date(inst.updated_at).toDateString() !== now.toDateString();
         let newDaily = isNewDay ? diffMins : (inst.daily_hours || 0) + diffMins;
-        let earnedNow = (diffMins / 60) * 40000; // Proporsional ish haqi
+        let earnedNow = (diffMins / 60) * 40000;
 
         await _supabase.from('instructors').update({
             status: 'active',
@@ -272,7 +299,6 @@ async function stopLessonAndCalculate(instructorId) {
             last_finish_time: null
         }).eq('id', instructorId);
 
-        // 3. Tarixga yozish
         await _supabase.from('services_history').insert([{
             instructor_id: instructorId,
             student_name: service.full_name,
@@ -280,10 +306,9 @@ async function stopLessonAndCalculate(instructorId) {
             service_id: service.unique_id
         }]);
 
-        // 4. Chekni to'liq yakunlash
         await _supabase.from('school_services').update({ last_finish_time: now.toISOString() }).eq('id', service.id);
 
-        location.reload();
+        stopProcessLocally();
 
     } catch (err) {
         console.error("Xatolik stopLesson:", err.message);
@@ -293,8 +318,7 @@ async function stopLessonAndCalculate(instructorId) {
 
 async function resetInstructorStatus(id) {
     await _supabase.from('instructors').update({ status: 'active', last_finish_time: null }).eq('id', id);
-    isScanning = true;
-    activeTimer = null;
+    stopProcessLocally();
 }
 
 async function updateInstStats() {
@@ -304,7 +328,6 @@ async function updateInstStats() {
 
     const { data: inst } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
     if (inst) {
-        // Ekranda soat ko'rinishida chiqarish (daqiqalarni 60 ga bo'lib)
         if(document.getElementById('total-hours')) document.getElementById('total-hours').innerText = (inst.daily_hours / 60).toFixed(1);
         if(document.getElementById('total-clients')) document.getElementById('total-clients').innerText = inst.total_clients || 0;
         if(document.getElementById('estimated-salary')) document.getElementById('estimated-salary').innerText = (inst.earned_money || 0).toLocaleString() + " UZS";
