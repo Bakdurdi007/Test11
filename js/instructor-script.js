@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initScanner();
     loadClientList();
     syncActiveLesson();
-    subscribeToChanges(); // ADMIN TO'XTATISHINI KUZATISH (YANGI)
+    subscribeToChanges(); // ADMIN TO'XTATISHINI KUZATISH
 });
 
 /**
@@ -31,7 +31,6 @@ function subscribeToChanges() {
     const session = JSON.parse(localStorage.getItem('inst_session'));
     if (!session) return;
 
-    // Instruktorlar jadvalidagi o'zgarishlarni kuzatamiz
     _supabase
         .channel('public:instructors')
         .on('postgres_changes', {
@@ -40,9 +39,9 @@ function subscribeToChanges() {
             table: 'instructors',
             filter: `id=eq.${session.id}`
         }, (payload) => {
-            // Agar admin statusni 'active' ga o'zgartirsa (To'xtatish bossa)
-            if (payload.new.status === 'active' && payload.old.status === 'busy') {
-                console.log("Admin darsni to'xtatdi.");
+            // Agar dars admin tomonidan to'xtatilsa yoki tugatilsa (status active bo'lsa)
+            if (payload.new.status === 'active') {
+                console.log("Status o'zgardi: Active holatga o'tildi.");
                 stopProcessLocally();
             }
         })
@@ -60,13 +59,13 @@ function stopProcessLocally() {
     // UI ni yangilash (Taymerni o'chirib skanerni qaytarish)
     const readerDiv = document.getElementById('reader');
     if (readerDiv) {
-        readerDiv.innerHTML = ""; // Skaner konteynerini tozalash
-        initScanner(); // Skanerni qayta ishga tushirish
+        readerDiv.innerHTML = "";
+        initScanner();
     }
 
+    // Ma'lumotlarni qayta yuklash
     updateInstStats();
     loadClientList();
-    alert("Dars admin tomonidan to'xtatildi yoki yakunlandi.");
 }
 
 /**
@@ -110,7 +109,7 @@ function playSound(type) {
 }
 
 /**
- * Darsni sinxronizatsiya qilish
+ * Darsni sinxronizatsiya qilish (Sahifa yangilanganda darsni davom ettirish)
  */
 async function syncActiveLesson() {
     const session = JSON.parse(localStorage.getItem('inst_session'));
@@ -124,11 +123,13 @@ async function syncActiveLesson() {
         if (diff > 0) {
             startTimerDisplay(diff);
         } else {
+            // Vaqt o'tib ketgan bo'lsa, statusni yopish buyrug'ini yuboramiz
             await stopLessonAndCalculate(session.id);
         }
     }
 }
 
+// QR Skaner obyekti
 const html5QrCode = new Html5Qrcode("reader");
 
 function initScanner() {
@@ -186,6 +187,9 @@ function showStudentModal(service) {
     modal.style.display = 'flex';
 }
 
+/**
+ * Darsni tasdiqlash
+ */
 async function confirmService() {
     if (!currentStudent) return;
     const startBtn = document.getElementById('start-btn');
@@ -198,6 +202,7 @@ async function confirmService() {
         const now = new Date();
         const finishDate = new Date(now.getTime() + (hoursFromTicket * 3600000));
 
+        // 1. Instruktor holatini yangilash
         const { error: updateError } = await _supabase
             .from('instructors')
             .update({
@@ -209,12 +214,12 @@ async function confirmService() {
 
         if (updateError) throw updateError;
 
+        // 2. Chekni faolsizlantirish va boshlanish vaqtini yozish
         await _supabase
             .from('school_services')
             .update({
                 is_active: false,
                 instructor_id: session.id,
-                last_finish_time: finishDate.toISOString(),
                 service_start_time: now.toISOString()
             })
             .eq('unique_id', currentStudent.unique_id);
@@ -231,6 +236,9 @@ async function confirmService() {
     }
 }
 
+/**
+ * Taymerni ekranda ko'rsatish
+ */
 function startTimerDisplay(durationMs) {
     const readerDiv = document.getElementById('reader');
     isScanning = false;
@@ -262,7 +270,7 @@ function startTimerDisplay(durationMs) {
 }
 
 /**
- * DARS TUGAGANDA YOKI ADMIN TO'XTATGANDA HISOBLASH
+ * DARS TUGAGANDA HISOBLASH (Taymer o'zi tugasa ishlaydi)
  */
 async function stopLessonAndCalculate(instructorId) {
     try {
@@ -271,7 +279,8 @@ async function stopLessonAndCalculate(instructorId) {
             .from('school_services')
             .select('*')
             .eq('instructor_id', instructorId)
-            .order('updated_at', { ascending: false })
+            .eq('is_active', false)
+            .order('service_start_time', { ascending: false })
             .limit(1)
             .single();
 
@@ -288,8 +297,8 @@ async function stopLessonAndCalculate(instructorId) {
         if (diffMins > maxMins) diffMins = maxMins;
         if (diffMins < 0) diffMins = 0;
 
-        const isNewDay = new Date(inst.updated_at).toDateString() !== now.toDateString();
-        let newDaily = isNewDay ? diffMins : (inst.daily_hours || 0) + diffMins;
+        // Kunlik soatlarni yangilash
+        let newDaily = (inst.daily_hours || 0) + diffMins;
         let earnedNow = (diffMins / 60) * 40000;
 
         await _supabase.from('instructors').update({
@@ -299,6 +308,7 @@ async function stopLessonAndCalculate(instructorId) {
             last_finish_time: null
         }).eq('id', instructorId);
 
+        // Tarixga yozish
         await _supabase.from('services_history').insert([{
             instructor_id: instructorId,
             student_name: service.full_name,
@@ -306,12 +316,10 @@ async function stopLessonAndCalculate(instructorId) {
             service_id: service.unique_id
         }]);
 
-        await _supabase.from('school_services').update({ last_finish_time: now.toISOString() }).eq('id', service.id);
-
         stopProcessLocally();
 
     } catch (err) {
-        console.error("Xatolik stopLesson:", err.message);
+        console.error("StopLesson xatosi:", err);
         await resetInstructorStatus(instructorId);
     }
 }
@@ -321,12 +329,15 @@ async function resetInstructorStatus(id) {
     stopProcessLocally();
 }
 
+/**
+ * Statistikani bazadan yangilab olish
+ */
 async function updateInstStats() {
     const sessionStr = localStorage.getItem('inst_session');
     if(!sessionStr) return;
     const session = JSON.parse(sessionStr);
 
-    const { data: inst } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
+    const { data: inst, error } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
     if (inst) {
         if(document.getElementById('total-hours')) document.getElementById('total-hours').innerText = (inst.daily_hours / 60).toFixed(1);
         if(document.getElementById('total-clients')) document.getElementById('total-clients').innerText = inst.total_clients || 0;
@@ -334,12 +345,15 @@ async function updateInstStats() {
     }
 }
 
+/**
+ * Mijozlar tarixini yuklash
+ */
 async function loadClientList() {
     const sessionStr = localStorage.getItem('inst_session');
     if(!sessionStr) return;
     const session = JSON.parse(sessionStr);
 
-    const { data } = await _supabase.from('services_history').select('*').eq('instructor_id', session.id).order('created_at', {ascending: false});
+    const { data } = await _supabase.from('services_history').select('*').eq('instructor_id', session.id).order('created_at', {ascending: false}).limit(10);
     const listDiv = document.getElementById('client-list');
     if (listDiv && data) {
         if (data.length > 0) {
@@ -351,7 +365,7 @@ async function loadClientList() {
                     </div>
                 </div>`).join('');
         } else {
-            listDiv.innerHTML = `<p style="color:#94a3b8; text-align:center;">Hozircha mijozlar yo'q</p>`;
+            listDiv.innerHTML = `<p style="color:#94a3b8; text-align:center;">Hozircha darslar yo'q</p>`;
         }
     }
 }
