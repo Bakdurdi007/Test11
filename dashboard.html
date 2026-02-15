@@ -128,12 +128,34 @@
                     <p id="db-status">Bog'lanmoqda...</p>
                 </div>
             </div>
+            <div class="stats">
+                <div class="card">
+                    <h3>Chek hisoboti</h3>
+                    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+                        <select id="report-period" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                            <option value="1day">1 kunlik hisobot</option>
+                            <option value="1week">1 haftalik hisobot</option>
+                            <option value="1month">1 oylik hisobot</option>
+                            <option value="1year">1 yillik hisobot</option>
+                        </select>
+                        <button onclick="generateFinancialReport()" class="btn-confirm" style="background: #3b82f6; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                            HISOBOTNI CHIQARISH (A4)
+                        </button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Instruktorlar hisoboti</h3>
+                    <p id="instruktor_report">Bog'lanmoqda...</p>
+                </div>
+            </div>
             <div class="table-container card">
                 <h3>Tizim adminlari</h3>
                 <table>
                     <thead>
                     <tr>
                         <th>ID</th>
+                        <th>To'liq ism va familyasi</th>
+                        <th>Ro'yxatdan o'tkazgan cheklar soni</th>
                         <th>Login</th>
                         <th>Yaratilgan vaqt</th>
                     </tr>

@@ -248,15 +248,14 @@ function printReceipt(item) {
     printWindow.document.close();
 }
 
-// 10. Asosiy Dashboard yuklash
-// 10. Asosiy Dashboard yuklash va Adminlar ro'yxatini chiqarish
+// 10. Asosiy Dashboard yuklash va Adminlar ro'yxatini chiqarish (1-Yechim: Real vaqtda sanash)
 async function initDashboard() {
     checkUserSession();
     try {
         // Supabase'dan barcha adminlarni olish
         const { data: admins, error } = await supabaseClient
             .from('admins')
-            .select('id, login, created_at')
+            .select('id, admin_fullname, login, created_at')
             .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -273,25 +272,41 @@ async function initDashboard() {
             // 3. JADVALNI TO'LDIRISH
             const tableBody = document.getElementById('admin-table-body');
             if (tableBody) {
-                if (admins.length === 0) {
-                    tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">Adminlar topilmadi</td></tr>';
-                } else {
-                    tableBody.innerHTML = admins.map(admin => `
+                // Har bir admin uchun alohida sanash (Promise.all ishlatamiz tezlik uchun)
+                const rows = await Promise.all(admins.map(async (admin) => {
+                    const { count } = await supabaseClient
+                        .from('school_services')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('created_by', admin.id); // Bog'langan cheklarni sanaymiz
+
+                    return `
                         <tr>
                             <td>${admin.id}</td>
+                            <td>${admin.admin_fullname || 'Ism kiritilmagan'}</td>
+                            <td><b style="color: #38bdf8;">${count || 0}</b></td>
                             <td><b>${admin.login}</b></td>
                             <td>${new Date(admin.created_at).toLocaleString('uz-UZ')}</td>
                         </tr>
-                    `).join('');
-                }
+                    `;
+                }));
+                tableBody.innerHTML = rows.join('');
             }
         }
 
-        // 4. Joriy tizimga kirgan admin ismini ko'rsatish
+        // 4. JORIY TIZIMGA KIRGAN ADMIN ISMINI VA LOGININI KO'RSATISH
         const sessionData = JSON.parse(localStorage.getItem("admin_session"));
         const adminNameDisplay = document.getElementById('admin-name');
+
         if (sessionData && adminNameDisplay) {
-            adminNameDisplay.innerText = "Admin: " + sessionData.login;
+            let currentAdminName = sessionData.admin_fullname;
+
+            if (!currentAdminName && admins) {
+                const found = admins.find(a => a.login === sessionData.login);
+                if (found) currentAdminName = found.admin_fullname;
+            }
+
+            const displayName = currentAdminName ? `${currentAdminName} (${sessionData.login})` : sessionData.login;
+            adminNameDisplay.innerText = "Admin: " + displayName;
         }
 
     } catch (err) {
@@ -312,6 +327,14 @@ document.addEventListener('DOMContentLoaded', () => {
         submitBtn.disabled = true;
         submitBtn.innerText = "SAQLANMOQDA...";
 
+        // 1. Joriy admin sessiyasini olish
+        const sessionData = JSON.parse(localStorage.getItem("admin_session"));
+        if (!sessionData) {
+            alert("Sessiya xatosi! Qayta kiring.");
+            location.reload();
+            return;
+        }
+
         // Unique ID yaratish
         const uniqueId = 'S-' + Date.now().toString().slice(-6) + Math.floor(Math.random() * 1000);
 
@@ -324,14 +347,17 @@ document.addEventListener('DOMContentLoaded', () => {
             payment_amount: parseFloat(document.getElementById('paymentAmount').value),
             payment_type: document.getElementById('paymentType').value,
             unique_id: uniqueId,
-            is_active: true
+            is_active: true,
+            created_by: sessionData.id // Chekni yaratgan adminni bog'laymiz
         };
 
+        // 2. school_services jadvaliga chekni qo'shish
         const { data, error } = await supabaseClient.from('school_services').insert([formData]).select();
 
         if (!error && data) {
             printReceipt(data[0]);
             await loadServicesTable();
+            await initDashboard(); // Sanoqni darhol yangilash uchun
             e.target.reset();
         } else {
             alert("Xatolik: " + error.message);
@@ -385,3 +411,151 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initDashboard();
 });
+
+// 15. Chek hisoboti
+async function generateFinancialReport() {
+    const period = document.getElementById('report-period').value;
+    const now = new Date();
+    let startDate = new Date();
+
+    // 1. Vaqt oralig'ini belgilash
+    if (period === '1day') startDate.setHours(0, 0, 0, 0);
+    else if (period === '1week') startDate.setDate(now.getDate() - 7);
+    else if (period === '1month') startDate.setMonth(now.getMonth() - 1);
+    else if (period === '1year') startDate.setFullYear(now.getFullYear() - 1);
+
+    const periodText = document.getElementById('report-period').options[document.getElementById('report-period').selectedIndex].text;
+
+    try {
+        // 2. Supabase'dan ma'lumotlarni olish
+        const { data: services, error } = await supabaseClient
+            .from('school_services')
+            .select('*')
+            .gte('created_at', startDate.toISOString())
+            .order('center_name', { ascending: true });
+
+        if (error) throw error;
+
+        if (!services || services.length === 0) {
+            alert("Tanlangan oraliq bo'yicha ma'lumot topilmadi.");
+            return;
+        }
+
+        // 3. Ma'lumotlarni avtomaktablar bo'yicha guruhlash
+        const reportData = {};
+        let totalAllSum = 0;
+        let totalAllClients = 0;
+
+        services.forEach(item => {
+            if (!reportData[item.center_name]) {
+                reportData[item.center_name] = {
+                    clients: [],
+                    totalSum: 0,
+                    count: 0
+                };
+            }
+            reportData[item.center_name].clients.push(item);
+            reportData[item.center_name].totalSum += Number(item.payment_amount);
+            reportData[item.center_name].count += 1;
+
+            totalAllSum += Number(item.payment_amount);
+            totalAllClients += 1;
+        });
+
+        // 4. A4 Oynasini yaratish va chop etish
+        const printWindow = window.open('', '', 'width=900,height=1000');
+
+        let htmlContent = `
+            <html>
+            <head>
+                <title>Hisobot - ${periodText}</title>
+                <style>
+                    body { font-family: 'Arial', sans-serif; padding: 20px; color: #333; }
+                    .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+                    .summary-box { background: #f8f9fa; padding: 15px; border: 1px solid #ddd; margin-bottom: 20px; border-radius: 5px; }
+                    .center-section { margin-bottom: 40px; page-break-inside: avoid; }
+                    .center-title { background: #334155; color: white; padding: 8px 15px; margin-bottom: 10px; border-radius: 4px; }
+                    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+                    th, td { border: 1px solid #999; padding: 8px; text-align: left; font-size: 12px; }
+                    th { background-color: #f2f2f2; }
+                    .total-row { font-weight: bold; background: #eee; }
+                    .footer-note { margin-top: 30px; font-size: 10px; text-align: right; border-top: 1px solid #ccc; padding-top: 5px; }
+                    @media print { .no-print { display: none; } }
+                </style>
+            </head>
+            <body>
+                <div class="no-print" style="margin-bottom: 20px;">
+                    <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer;">Chop etish (Print)</button>
+                </div>
+                
+                <div class="header">
+                    <h1>MOLIYAVIY HISOBOT</h1>
+                    <h3>Tur: ${periodText}</h3>
+                    <p>Sana: ${new Date().toLocaleString('uz-UZ')}</p>
+                </div>
+
+                <div class="summary-box">
+                    <p><b>Jami mijozlar soni:</b> ${totalAllClients} ta</p>
+                    <p><b>Jami tushum qiymati:</b> ${totalAllSum.toLocaleString()} UZS</p>
+                </div>
+        `;
+
+        // Har bir avtomaktab uchun alohida jadval
+        for (const centerName in reportData) {
+            const data = reportData[centerName];
+            htmlContent += `
+                <div class="center-section">
+                    <h3 class="center-title">Avtomaktab: ${centerName}</h3>
+                    <p>• Mijozlar soni: ${data.count} ta</p>
+                    <p>• Tushum qiymati: ${data.totalSum.toLocaleString()} UZS</p>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>№</th>
+                                <th>F.I.O</th>
+                                <th>Guruh</th>
+                                <th>Vaqt (soat)</th>
+                                <th>To'lov turi</th>
+                                <th>Summa</th>
+                                <th>Sana</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.clients.map((c, index) => `
+                                <tr>
+                                    <td>${index + 1}</td>
+                                    <td>${c.full_name}</td>
+                                    <td>${c.group}</td>
+                                    <td>${c.hours}</td>
+                                    <td>${c.payment_type}</td>
+                                    <td>${Number(c.payment_amount).toLocaleString()}</td>
+                                    <td>${new Date(c.created_at).toLocaleDateString()}</td>
+                                </tr>
+                            `).join('')}
+                            <tr class="total-row">
+                                <td colspan="5" style="text-align: right;">Jami:</td>
+                                <td colspan="2">${data.totalSum.toLocaleString()} UZS</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        htmlContent += `
+                <div class="footer-note">
+                    Tizim tomonidan generatsiya qilindi. Admin: ${JSON.parse(localStorage.getItem('admin_session')).login}
+                </div>
+            </body>
+            </html>
+        `;
+
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+
+    } catch (err) {
+        console.error("Hisobotda xato:", err);
+        alert("Hisobot tayyorlashda xatolik yuz berdi.");
+    }
+}

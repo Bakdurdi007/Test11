@@ -1,29 +1,45 @@
+/**
+ * INSTRUCTOR-SCRIPT.JS - Instruktorlar mobil ilovasi uchun asosiy mantiq
+ */
+
+// 1. Supabase ulanish sozlamalari
 const SUPABASE_URL = 'https://sqgdmanmnvioijducopi.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxZ2RtYW5tbnZpb2lqZHVjb3BpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4Nzk1ODUsImV4cCI6MjA4NjQ1NTU4NX0.CmP9-bQaxQDAOKnVAlU4tkpRHmFlfXVEW2-tYJ52R90';
 
+// Supabase klientini yaratish
 const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let currentStudent = null;
-let isScanning = true;
-let activeTimer = null;
+// Global o'zgaruvchilar
+let currentStudent = null; // Skanerlangan talaba ma'lumotlarini vaqtincha saqlash uchun
+let isScanning = true;     // Skaner faol yoki faol emasligini nazorat qilish
+let activeTimer = null;    // Ishlayotgan taymer obyekti
 
+// Sahifa yuklanganda ishga tushadigan asosiy qism
 document.addEventListener('DOMContentLoaded', () => {
-    checkSession();
-    updateInstStats();
-    initScanner();
-    loadClientList();
-    syncActiveLesson(); // Sahifa yangilanganda darsni tekshirish
+    checkSession();      // 1. Foydalanuvchi tizimga kirganini tekshirish
+    updateInstStats();   // 2. Statistikani (soat, pul) yangilash
+    initScanner();       // 3. QR skanerni ishga tushirish
+    loadClientList();    // 4. Avvalgi mijozlar ro'yxatini yuklash
+    syncActiveLesson();  // 5. Agar dars davom etayotgan bo'lsa, taymerni tiklash
 });
 
+/**
+ * Tizimga kirganlikni tekshirish funksiyasi
+ */
 function checkSession() {
     const sessionStr = localStorage.getItem('inst_session');
-    if (!sessionStr) { window.location.replace('index.html'); return; }
+    if (!sessionStr) {
+        window.location.replace('index.html'); // Sessiya bo'lmasa login sahifasiga qaytaradi
+        return;
+    }
     const session = JSON.parse(sessionStr);
     const nameEl = document.getElementById('inst-name');
-    if (nameEl) nameEl.innerText = session.full_name;
+    if (nameEl) nameEl.innerText = session.full_name; // Instruktor ismini ekranga chiqarish
 }
 
-// Ovozli signallar funksiyasi
+/**
+ * Ovozli signallar yaratish (Dars tugayotganda ogohlantirish uchun)
+ */
 function playSound(type) {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -32,12 +48,12 @@ function playSound(type) {
         osc.connect(gain);
         gain.connect(ctx.destination);
 
-        if (type === 'warning') { // 10 va 5 min uchun
+        if (type === 'warning') { // 10 va 5 daqiqa qolganda chalinadigan signal
             osc.frequency.value = 440;
             gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
             osc.start();
             osc.stop(ctx.currentTime + 0.8);
-        } else if (type === 'finish') { // Tugaganda
+        } else if (type === 'finish') { // Dars to'liq tugaganda chalinadigan signal
             osc.frequency.value = 580;
             gain.gain.setValueAtTime(0.1, ctx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 3);
@@ -47,9 +63,12 @@ function playSound(type) {
     } catch (e) { console.error("Audio xatosi:", e); }
 }
 
-// Boshqa qurilmadan kirilganda ham taymerni davom ettirish
+/**
+ * Darsni sinxronizatsiya qilish: Sahifa yangilansa ham taymer o'chib ketmasligi uchun
+ */
 async function syncActiveLesson() {
     const session = JSON.parse(localStorage.getItem('inst_session'));
+    // Bazadan instruktorning hozirgi holatini tekshirish
     const { data: inst } = await _supabase.from('instructors').select('status, last_finish_time').eq('id', session.id).single();
 
     if (inst && inst.status === 'busy') {
@@ -58,49 +77,63 @@ async function syncActiveLesson() {
         const diff = finishTime - now;
 
         if (diff > 0) {
-            startTimerDisplay(diff);
+            startTimerDisplay(diff); // Agar vaqt tugamagan bo'lsa, taymerni qolgan vaqtdan boshlash
         } else {
-            await resetInstructorStatus(session.id);
+            await resetInstructorStatus(session.id); // Vaqt o'tib ketgan bo'lsa statusni ochish
         }
     }
 }
 
+// QR Skaner obyekti
 const html5QrCode = new Html5Qrcode("reader");
+
+/**
+ * Skanerni kameraga ulab ishga tushirish
+ */
 function initScanner() {
     html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, onScanSuccess)
         .catch(err => console.error("Skaner xatosi:", err));
 }
 
+/**
+ * QR kod muvaffaqiyatli skanerlanganda bajariladigan amal
+ */
 async function onScanSuccess(decodedText) {
-    if (!isScanning) return;
+    if (!isScanning) return; // Agar hozirda boshqa amal bajarilayotgan bo'lsa to'xtatish
 
     const session = JSON.parse(localStorage.getItem('inst_session'));
     const { data: inst } = await _supabase.from('instructors').select('status, last_finish_time').eq('id', session.id).single();
 
+    // Instruktor bandligini tekshirish
     if (inst && inst.status === 'busy') {
         const remainingMs = new Date(inst.last_finish_time) - new Date();
         const remainingMin = Math.ceil(remainingMs / 60000);
-        alert(`Siz hozir boshqa chekni skanerlay olmaysiz! Hali darsingiz tugamagan. Siz ${remainingMin} daqiqadan keyin dars boshlay olasiz.`);
+        alert(`Siz hozir bandsiz! Dars tugashiga ${remainingMin} daqiqa bor.`);
         return;
     }
 
     isScanning = false;
+    // Bazadan skanerlangan ID bo'yicha chekni qidirish
     const { data: service } = await _supabase.from('school_services').select('*').eq('unique_id', decodedText).maybeSingle();
 
     if (service) {
         currentStudent = service;
-        showStudentModal(service);
+        showStudentModal(service); // Talaba ma'lumotlarini ko'rsatish
     } else {
         alert("Chek topilmadi yoki xato QR kod.");
         isScanning = true;
     }
 }
 
+/**
+ * Talaba va dars ma'lumotlarini ko'rsatuvchi oyna (Modal)
+ */
 function showStudentModal(service) {
     const modal = document.getElementById('studentModal');
     const dataArea = document.getElementById('modal-data');
     const footerArea = document.getElementById('modal-footer-btns');
 
+    // Agar chek avval ishlatilgan bo'lsa (is_active: false)
     if (service.is_active === false) {
         dataArea.innerHTML = `
             <div style="text-align:center; padding: 20px;">
@@ -109,6 +142,7 @@ function showStudentModal(service) {
             </div>`;
         footerArea.innerHTML = `<button onclick="closeModal()" class="btn-cancel" style="width:100%">YOPISH</button>`;
     } else {
+        // Yangi chek bo'lsa ma'lumotlarni chiqarish
         dataArea.innerHTML = `
             <div class="mashgulot-info" style="text-align:left; line-height:1.8;">
                 <h3 style="color:var(--accent); text-align:center;">Dars ma'lumotlari:</h3>
@@ -123,61 +157,98 @@ function showStudentModal(service) {
     modal.style.display = 'flex';
 }
 
+/**
+ * Darsni tasdiqlash va soatlarni hisoblash funksiyasi
+ */
 async function confirmService() {
     if (!currentStudent) return;
+
     const startBtn = document.getElementById('start-btn');
     startBtn.disabled = true;
     startBtn.innerText = "YUKLANMOQDA...";
 
-    const session = JSON.parse(localStorage.getItem('inst_session'));
-    const hours = Number(currentStudent.hours);
-    const now = new Date();
-    const finishDate = new Date(now.getTime() + (hours * 3600000));
+    try {
+        const session = JSON.parse(localStorage.getItem('inst_session'));
+        const hoursFromTicket = Number(currentStudent.hours); // Chekdagi soat (masalan: 2)
+        const minutesToAdd = hoursFromTicket * 60; // Soatni minutga o'tkazish (120 min)
 
-    // 1. Chekni yopish
-    await _supabase.from('school_services').update({ is_active: false }).eq('unique_id', currentStudent.unique_id);
+        const now = new Date();
+        const finishDate = new Date(now.getTime() + (hoursFromTicket * 3600000));
 
-    // 2. Instruktor statusini va soatlarini yangilash
-    const { data: inst } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
+        // 1. Instruktorning joriy ma'lumotlarini olish
+        const { data: inst, error: instError } = await _supabase
+            .from('instructors')
+            .select('*')
+            .eq('id', session.id)
+            .single();
 
-    const newDaily = (inst.daily_hours || 0) + hours;
-    const newMonthly = (inst.monthly_hours || 0) + hours;
-    const rate = newDaily > 200 ? 45000 : 40000;
-    const newEarned = (inst.earned_money || 0) + (hours * rate);
+        if (instError) throw instError;
 
-    await _supabase.from('instructors').update({
-        status: 'busy',
-        last_finish_time: finishDate.toISOString(),
-        daily_hours: newDaily,
-        monthly_hours: newMonthly,
-        earned_money: newEarned,
-        total_clients: (inst.total_clients || 0) + 1
-    }).eq('id', session.id);
+        // 2. Sana tekshiruvi (Kunlik va oylik soatlarni nolga tushirish uchun)
+        const lastUpdate = inst.updated_at ? new Date(inst.updated_at) : new Date(0);
 
-    // misol uchun
-    // 3. Tickets jadvaliga yozish
-    await _supabase.from('tickets').insert([{
-        unique_id: currentStudent.unique_id,
-        scanner_data: now.toISOString(),
-        instruktor_id: session.id,
-        car_number: inst.car_number || 'Nomalum',
-        created_date: currentStudent.created_at,
-        finish_time: finishDate.toISOString()
-    }]);
+        const isNewDay = lastUpdate.toDateString() !== now.toDateString();
+        const isNewMonth = lastUpdate.getMonth() !== now.getMonth() || lastUpdate.getFullYear() !== now.getFullYear();
 
-    // 4. Tarixga yozish
-    await _supabase.from('services_history').insert([{
-        instructor_id: session.id,
-        student_name: currentStudent.full_name,
-        hours: currentStudent.hours,
-        service_id: currentStudent.unique_id
-    }]);
+        // 3. Yangi qiymatlarni hisoblash
+        // Agar yangi kun bo'lsa daily_hours 0 dan boshlanadi
+        let newDailyHours = isNewDay ? minutesToAdd : (inst.daily_hours || 0) + minutesToAdd;
 
-    startTimerDisplay(hours * 3600000);
-    closeModal();
-    updateInstStats();
+        // Agar yangi oy bo'lsa monthly_hours 0 dan boshlanadi
+        let newMonthlyHours = isNewMonth ? minutesToAdd : (inst.monthly_hours || 0) + minutesToAdd;
+
+        // Maoshni hisoblash (Namuna: 1 soat uchun 40,000 so'm)
+        const newEarnedMoney = (inst.earned_money || 0) + (hoursFromTicket * 40000);
+
+        // 4. SUPABASE NI YANGILASH
+        const { error: updateError } = await _supabase
+            .from('instructors')
+            .update({
+                status: 'busy',
+                last_finish_time: finishDate.toISOString(),
+                daily_hours: newDailyHours,
+                monthly_hours: newMonthlyHours,
+                earned_money: newEarnedMoney,
+                total_clients: (inst.total_clients || 0) + 1,
+                updated_at: now.toISOString() // Bu ustun keyingi safar sanani solishtirish uchun kerak
+            })
+            .eq('id', session.id);
+
+        if (updateError) throw updateError;
+
+        // 5. Chekni yaroqsiz qilish (is_active: false)
+        await _supabase
+            .from('school_services')
+            .update({ is_active: false })
+            .eq('unique_id', currentStudent.unique_id);
+
+        // 6. Tarixga yozish (History)
+        await _supabase.from('services_history').insert([{
+            instructor_id: session.id,
+            student_name: currentStudent.full_name,
+            hours: hoursFromTicket, // Bu yerda asil soatni saqlash qulayroq
+            service_id: currentStudent.unique_id
+        }]);
+
+        // 7. Taymerni ishga tushirish va modalni yopish
+        startTimerDisplay(hoursFromTicket * 3600000);
+        closeModal();
+        updateInstStats();
+
+        alert("Mashg'ulot boshlandi. Muvaffaqiyatli saqlandi!");
+
+    } catch (err) {
+        console.error("Xatolik yuz berdi:", err.message);
+        alert("Xatolik: " + err.message);
+    } finally {
+        startBtn.disabled = false;
+        startBtn.innerText = "BOSHLASH";
+    }
 }
 
+/**
+ * Taymerni ekranga chiqarish va teskari hisoblash
+ */
 function startTimerDisplay(durationMs) {
     const readerDiv = document.getElementById('reader');
     isScanning = false;
@@ -190,6 +261,7 @@ function startTimerDisplay(durationMs) {
         const m = Math.floor((durationMs % 3600000) / 60000);
         const s = Math.floor((durationMs % 60000) / 1000);
 
+        // Taymer dizayni (skaner o'rnida ko'rinadi)
         readerDiv.innerHTML = `
             <div style="text-align:center; padding:40px; background:#1e293b; color:white; border-radius:15px; border:2px solid #f59e0b;">
                 <h3 style="color:#f59e0b; margin-bottom:15px;">MASHG'ULOT KETMOQDA</h3>
@@ -199,26 +271,33 @@ function startTimerDisplay(durationMs) {
                 <p style="margin-top:15px; color:#94a3b8;">Hozir skanerlash bloklangan</p>
             </div>`;
 
-        // Signallar
+        // Dars tugashiga yaqin qolganidagi ovozli signallar
         if (m === 10 && s === 0 && h === 0) playSound('warning');
         if (m === 5 && s === 0 && h === 0) playSound('warning');
 
+        // Vaqt tugaganda
         if (durationMs <= 0) {
             clearInterval(activeTimer);
             playSound('finish');
             const session = JSON.parse(localStorage.getItem('inst_session'));
-            await resetInstructorStatus(session.id);
-            location.reload(); // Skanerni va UI ni qayta tiklash
+            await resetInstructorStatus(session.id); // Instruktorni bo'shatish
+            location.reload(); // Sahifani yangilab skanerni qayta yoqish
         }
     }, 1000);
 }
 
+/**
+ * Instruktor darsni tugatgandan so'ng holatini 'active' ga qaytarish
+ */
 async function resetInstructorStatus(id) {
     await _supabase.from('instructors').update({ status: 'active' }).eq('id', id);
     isScanning = true;
     activeTimer = null;
 }
 
+/**
+ * Instruktorning umumiy statistikasini (soat, mijoz, pul) yangilash
+ */
 async function updateInstStats() {
     const sessionStr = localStorage.getItem('inst_session');
     if(!sessionStr) return;
@@ -232,6 +311,9 @@ async function updateInstStats() {
     }
 }
 
+/**
+ * Instruktor bajargan ishlar ro'yxatini (tarixni) bazadan yuklash
+ */
 async function loadClientList() {
     const sessionStr = localStorage.getItem('inst_session');
     if(!sessionStr) return;
@@ -254,18 +336,29 @@ async function loadClientList() {
     }
 }
 
-
+/**
+ * Modal oynani yopish
+ */
 function closeModal() {
     document.getElementById('studentModal').style.display = 'none';
-    if (!activeTimer) isScanning = true;
+    if (!activeTimer) isScanning = true; // Agar dars ketmayotgan bo'lsa skanerni davom ettirish
     currentStudent = null;
 }
 
+/**
+ * Chiqish jarayoni
+ */
 function logout() { confirmLogout(); }
+
+/**
+ * Chiqishni tasdiqlash oynasi
+ */
 function confirmLogout() {
     isScanning = false;
     const modal = document.getElementById('studentModal');
-    document.getElementById('modal-data').innerHTML = `<h2 style="color:white; text-align:center;">Chiqish</h2><p style="text-align:center; color:#94a3b8;">Rostdan ham tizimdan chiqmoqchimisiz?</p>`;
+    document.getElementById('modal-data').innerHTML = `
+        <h2 style="color:white; text-align:center;">Chiqish</h2>
+        <p style="text-align:center; color:#94a3b8;">Rostdan ham tizimdan chiqmoqchimisiz?</p>`;
     document.getElementById('modal-footer-btns').innerHTML = `
         <div style="display:flex; gap:10px; width:100%;">
             <button onclick="executeLogout()" class="btn-danger-modal" style="flex:1;">HA</button>
@@ -273,4 +366,11 @@ function confirmLogout() {
         </div>`;
     modal.style.display = 'flex';
 }
-function executeLogout() { localStorage.clear(); window.location.replace('index.html'); }
+
+/**
+ * LocalStorage ni tozalab login sahifasiga yuborish
+ */
+function executeLogout() {
+    localStorage.clear();
+    window.location.replace('index.html');
+}
