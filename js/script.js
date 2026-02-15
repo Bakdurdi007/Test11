@@ -300,7 +300,7 @@ function viewInstructor(encodedData) {
             <div style="display: flex; flex-direction: column; gap: 12px;">
                 <p style="display: flex; justify-content: space-between;"><b>F.I.O:</b> <span>${inst.full_name}</span></p>
                 <p style="display: flex; justify-content: space-between;"><b>Mashina:</b> <span>${inst.car_number}</span></p>
-                <p style="display: flex; justify-content: space-between;"><b>Kunlik soat:</b> <span>${inst.daily_hours || 0} s</span></p>
+                <p style="display: flex; justify-content: space-between;"><b>Kunlik soat:</b> <span>${inst.daily_hours || 0} min</span></p>
                 <p style="display: flex; justify-content: space-between;"><b>Jami daromad:</b> <span>${Number(inst.earned_money || 0).toLocaleString()} UZS</span></p>
             </div>
         </div>
