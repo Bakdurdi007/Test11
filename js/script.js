@@ -961,3 +961,87 @@ async function checkAndResetHours() {
         localStorage.setItem('last_reset_date', today);
     }
 }
+
+
+// 18.
+// --- JORIY DARSNI MAJBURIY TO'XTATISH (ADMIN UCHUN) ---
+async function adminStopLesson(instructorId) {
+    if (!confirm("Haqiqatan ham ushbu instruktorning darsini to'xtatmoqchimisiz?")) return;
+
+    try {
+        // 1. Instruktor ma'lumotlarini olish
+        const { data: inst, error: instErr } = await supabaseClient
+            .from('instructors')
+            .select('*')
+            .eq('id', instructorId)
+            .single();
+
+        if (instErr || !inst) throw new Error("Instruktor topilmadi");
+
+        // 2. Shu instruktorga tegishli oxirgi band (is_active: false) bo'lgan chekni olish
+        const { data: service, error: servErr } = await supabaseClient
+            .from('school_services')
+            .select('*')
+            .eq('instructor_id', instructorId)
+            .order('service_start_time', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (servErr || !service || !service.service_start_time) {
+            // Agar dars ma'lumotlari topilmasa, shunchaki statusni active qilib qo'yamiz
+            await supabaseClient.from('instructors').update({
+                status: 'active',
+                last_finish_time: null
+            }).eq('id', instructorId);
+            alert("Faol dars topilmadi, ammo instruktor statusi bo'shatildi.");
+            return;
+        }
+
+        // 3. Vaqtni hisoblash (Boshlangan vaqtdan hozirgacha)
+        const startTime = new Date(service.service_start_time);
+        const now = new Date();
+        let diffMins = Math.floor((now - startTime) / 60000);
+
+        const maxMins = service.hours * 60;
+        if (diffMins > maxMins) diffMins = maxMins; // Chek vaqtidan oshib ketmasligi uchun
+        if (diffMins < 0) diffMins = 0;
+
+        // 4. Instruktorning yangi statistikasi
+        const isNewDay = new Date(inst.updated_at).toDateString() !== now.toDateString();
+        let newDaily = isNewDay ? diffMins : (inst.daily_hours || 0) + diffMins;
+        let earnedNow = (diffMins / 60) * 40000; // 1 soat uchun 40,000 so'm (misol)
+
+        // 5. BAZANI YANGILASH (Statusni o'zgartirish va soatni yozish)
+        const { error: updateError } = await supabaseClient.from('instructors').update({
+            status: 'active',
+            daily_hours: newDaily,
+            earned_money: (inst.earned_money || 0) + earnedNow,
+            last_finish_time: null,
+            updated_at: now.toISOString()
+        }).eq('id', instructorId);
+
+        if (updateError) throw updateError;
+
+        // 6. Tarixga yozish
+        await supabaseClient.from('services_history').insert([{
+            instructor_id: instructorId,
+            student_name: service.full_name,
+            hours: (diffMins / 60).toFixed(1),
+            service_id: service.unique_id
+        }]);
+
+        // 7. Chekni yakunlangan deb belgilash
+        await supabaseClient.from('school_services')
+            .update({ last_finish_time: now.toISOString() })
+            .eq('id', service.id);
+
+        alert("Dars to'xtatildi va hisob-kitob qilindi!");
+
+        // Monitoring yoki jadvalni yangilash
+        if (typeof startMonitoring === 'function') startMonitoring();
+
+    } catch (err) {
+        console.error("Xatolik:", err.message);
+        alert("Xatolik: " + err.message);
+    }
+}

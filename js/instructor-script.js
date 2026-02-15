@@ -21,69 +21,52 @@ document.addEventListener('DOMContentLoaded', () => {
     initScanner();
     loadClientList();
     syncActiveLesson();
-    subscribeToChanges(); // ADMIN TO'XTATISHINI KUZATISH (YANGI)
+    subscribeToChanges(); // Admin to'xtatishini kuzatish
 });
 
 /**
- * ADMIN PANELDA TO'XTATISH TUGMASI BOSILSA REAL-VAQTDA ILG'ASH
+ * ADMIN PANELDA TO'XTATISH TUGMASI BOSILSA REAL-VAQTDA JAVOB BERISH
  */
 function subscribeToChanges() {
-    const sessionStr = localStorage.getItem('inst_session');
-    if (!sessionStr) return;
-    const session = JSON.parse(sessionStr);
-
-    console.log("Real-time kuzatuv yoqildi: ", session.id);
+    const session = JSON.parse(localStorage.getItem('inst_session'));
+    if (!session) return;
 
     _supabase
-        .channel('instructor_status_changes') // Kanal nomini aniqroq beramiz
+        .channel('public:instructors')
         .on('postgres_changes', {
             event: 'UPDATE',
             schema: 'public',
             table: 'instructors',
             filter: `id=eq.${session.id}`
         }, (payload) => {
-            console.log("Bazada o'zgarish aniqlandi:", payload.new.status);
-
-            // Shartni soddalashtiramiz: Agar yangi status 'active' bo'lsa va ilovada taymer hali ham ishlayotgan bo'lsa
+            // Agar admin statusni 'active' (BO'SH) ga o'zgartirsa, ilova to'xtashi kerak
             if (payload.new.status === 'active') {
-                if (activeTimer) {
-                    console.log("Admin darsni to'xtatdi. Mahalliy jarayonlar yopilmoqda...");
-                    stopProcessLocally();
-                }
+                console.log("Dars to'xtatildi yoki yakunlandi.");
+                stopProcessLocally();
             }
         })
         .subscribe();
 }
+
 /**
- * Ilovada darsni mahalliy (local) to'xtatish va holatni tiklash
+ * Ilovada darsni mahalliy to'xtatish va interfeysni yangilash
  */
 function stopProcessLocally() {
-    // 1. Taymerni to'xtatish
-    if (activeTimer) {
-        clearInterval(activeTimer);
-        activeTimer = null;
-    }
-
-    // 2. Skanerlashga ruxsat berish
+    if (activeTimer) clearInterval(activeTimer);
+    activeTimer = null;
     isScanning = true;
 
-    // 3. UI ni tozalash (Taymer o'rniga skaner konteynerini qaytarish)
+    // UI ni skanerlash holatiga qaytarish
     const readerDiv = document.getElementById('reader');
     if (readerDiv) {
-        readerDiv.innerHTML = ""; // Taymer divini o'chirish
-        // Skanerni qayta ishga tushirish uchun biroz kutish (render xatosi bo'lmasligi uchun)
-        setTimeout(() => {
-            initScanner();
-        }, 500);
+        readerDiv.innerHTML = "";
+        initScanner();
     }
 
-    // 4. Statistikani yangilash
     updateInstStats();
     loadClientList();
-
-    // 5. Agar modal ochiq bo'lsa yopish
-    closeModal();
 }
+
 /**
  * Tizimga kirganlikni tekshirish
  */
@@ -139,7 +122,8 @@ async function syncActiveLesson() {
         if (diff > 0) {
             startTimerDisplay(diff);
         } else {
-            await stopLessonAndCalculate(session.id);
+            // Vaqt tugagan bo'lsa, statusni 'active' qilish
+            await resetInstructorStatus(session.id);
         }
     }
 }
@@ -158,7 +142,7 @@ async function onScanSuccess(decodedText) {
     const { data: inst } = await _supabase.from('instructors').select('status').eq('id', session.id).single();
 
     if (inst && inst.status === 'busy') {
-        alert("Siz hozir bandsiz! Oldin joriy darsni tugatishingiz kerak.");
+        alert("Siz hozir bandsiz!");
         return;
     }
 
@@ -169,7 +153,7 @@ async function onScanSuccess(decodedText) {
         currentStudent = service;
         showStudentModal(service);
     } else {
-        alert("Chek topilmadi yoki xato QR kod.");
+        alert("Chek topilmadi.");
         isScanning = true;
     }
 }
@@ -180,18 +164,13 @@ function showStudentModal(service) {
     const footerArea = document.getElementById('modal-footer-btns');
 
     if (service.is_active === false) {
-        dataArea.innerHTML = `
-            <div style="text-align:center; padding: 20px;">
-                <h2 style="color:#ef4444;">⚠️ YAROQSIZ CHEK</h2>
-                <p style="color:#94a3b8;">Bu chek avval ishlatilgan!</p>
-            </div>`;
+        dataArea.innerHTML = `<div style="text-align:center; padding: 20px;"><h2 style="color:#ef4444;">⚠️ YAROQSIZ</h2><p>Ishlatilgan chek.</p></div>`;
         footerArea.innerHTML = `<button onclick="closeModal()" class="btn-cancel" style="width:100%">YOPISH</button>`;
     } else {
         dataArea.innerHTML = `
             <div class="mashgulot-info" style="text-align:left; line-height:1.8;">
                 <h3 style="color:var(--accent); text-align:center;">Dars ma'lumotlari:</h3>
                 <p>👤 <b>Ism:</b> ${service.full_name}</p>
-                <p>🏢 <b>Markaz:</b> ${service.center_name}</p>
                 <p>⌛ <b>Vaqt:</b> ${service.hours} soat</p>
                 <p>💰 <b>To'lov:</b> ${Number(service.payment_amount).toLocaleString()} UZS</p>
             </div>`;
@@ -201,48 +180,39 @@ function showStudentModal(service) {
     modal.style.display = 'flex';
 }
 
+/**
+ * Darsni tasdiqlash va boshlash
+ */
 async function confirmService() {
     if (!currentStudent) return;
     const startBtn = document.getElementById('start-btn');
     startBtn.disabled = true;
-    startBtn.innerText = "YUKLANMOQDA...";
 
     try {
         const session = JSON.parse(localStorage.getItem('inst_session'));
-        const hoursFromTicket = Number(currentStudent.hours);
         const now = new Date();
-        const finishDate = new Date(now.getTime() + (hoursFromTicket * 3600000));
+        const finishDate = new Date(now.getTime() + (Number(currentStudent.hours) * 3600000));
 
-        const { error: updateError } = await _supabase
-            .from('instructors')
-            .update({
-                status: 'busy',
-                last_finish_time: finishDate.toISOString(),
-                updated_at: now.toISOString()
-            })
-            .eq('id', session.id);
+        // 1. Instruktor statusini 'busy' qilish (VAQT HISOBLANMAYDI!)
+        await _supabase.from('instructors').update({
+            status: 'busy',
+            last_finish_time: finishDate.toISOString(),
+            updated_at: now.toISOString()
+        }).eq('id', session.id);
 
-        if (updateError) throw updateError;
+        // 2. Chekni faolsizlantirish va boshlash vaqtini belgilash
+        await _supabase.from('school_services').update({
+            is_active: false,
+            instructor_id: session.id,
+            service_start_time: now.toISOString()
+        }).eq('unique_id', currentStudent.unique_id);
 
-        await _supabase
-            .from('school_services')
-            .update({
-                is_active: false,
-                instructor_id: session.id,
-                last_finish_time: finishDate.toISOString(),
-                service_start_time: now.toISOString()
-            })
-            .eq('unique_id', currentStudent.unique_id);
-
-        startTimerDisplay(hoursFromTicket * 3600000);
+        startTimerDisplay(Number(currentStudent.hours) * 3600000);
         closeModal();
         updateInstStats();
 
     } catch (err) {
         alert("Xatolik: " + err.message);
-    } finally {
-        startBtn.disabled = false;
-        startBtn.innerText = "BOSHLASH";
     }
 }
 
@@ -253,7 +223,6 @@ function startTimerDisplay(durationMs) {
 
     activeTimer = setInterval(async () => {
         durationMs -= 1000;
-
         const h = Math.floor(durationMs / 3600000);
         const m = Math.floor((durationMs % 3600000) / 60000);
         const s = Math.floor((durationMs % 60000) / 1000);
@@ -261,72 +230,59 @@ function startTimerDisplay(durationMs) {
         readerDiv.innerHTML = `
             <div style="text-align:center; padding:40px; background:#1e293b; color:white; border-radius:15px; border:2px solid #f59e0b;">
                 <h3 style="color:#f59e0b; margin-bottom:15px;">MASHG'ULOT KETMOQDA</h3>
-                <div style="font-size:42px; font-weight:bold; font-family:monospace;">
-                    ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}
-                </div>
-                <p style="margin-top:15px; color:#94a3b8;">Hozir skanerlash bloklangan</p>
+                <div style="font-size:42px; font-weight:bold;">${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}</div>
             </div>`;
 
         if (durationMs <= 0) {
             clearInterval(activeTimer);
-            playSound('finish');
             const session = JSON.parse(localStorage.getItem('inst_session'));
-            await stopLessonAndCalculate(session.id);
+            await stopLessonAndCalculate(session.id); // Tugaganda hisoblash
         }
     }, 1000);
 }
 
 /**
- * DARS TUGAGANDA YOKI ADMIN TO'XTATGANDA HISOBLASH
+ * VAQTNI HISOBLASH - FAQAT TUGAGANDA YOKI TO'XTATILGANDA ISHLAYDI
  */
 async function stopLessonAndCalculate(instructorId) {
     try {
         const { data: inst } = await _supabase.from('instructors').select('*').eq('id', instructorId).single();
-        const { data: service } = await _supabase
-            .from('school_services')
-            .select('*')
-            .eq('instructor_id', instructorId)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .single();
+        const { data: service } = await _supabase.from('school_services')
+            .select('*').eq('instructor_id', instructorId).eq('is_active', false)
+            .order('service_start_time', { ascending: false }).limit(1).single();
 
-        if (!inst || !service || !service.service_start_time) {
-            await resetInstructorStatus(instructorId);
-            return;
+        if (inst && service && service.service_start_time) {
+            const startTime = new Date(service.service_start_time);
+            const now = new Date();
+            let diffMins = Math.floor((now - startTime) / 60000);
+
+            // Maksimal vaqtdan oshmasligi kerak
+            const maxMins = service.hours * 60;
+            if (diffMins > maxMins) diffMins = maxMins;
+            if (diffMins < 0) diffMins = 0;
+
+            // Statistikani yangilash
+            let newDaily = (inst.daily_hours || 0) + diffMins;
+            let earnedNow = (diffMins / 60) * 40000;
+
+            await _supabase.from('instructors').update({
+                status: 'active',
+                daily_hours: newDaily,
+                earned_money: (inst.earned_money || 0) + earnedNow,
+                last_finish_time: null
+            }).eq('id', instructorId);
+
+            // Tarixga yozish
+            await _supabase.from('services_history').insert([{
+                instructor_id: instructorId,
+                student_name: service.full_name,
+                hours: (diffMins / 60).toFixed(1),
+                service_id: service.unique_id
+            }]);
         }
-
-        const startTime = new Date(service.service_start_time);
-        const now = new Date();
-        let diffMins = Math.floor((now - startTime) / 60000);
-
-        const maxMins = service.hours * 60;
-        if (diffMins > maxMins) diffMins = maxMins;
-        if (diffMins < 0) diffMins = 0;
-
-        const isNewDay = new Date(inst.updated_at).toDateString() !== now.toDateString();
-        let newDaily = isNewDay ? diffMins : (inst.daily_hours || 0) + diffMins;
-        let earnedNow = (diffMins / 60) * 40000;
-
-        await _supabase.from('instructors').update({
-            status: 'active',
-            daily_hours: newDaily,
-            earned_money: (inst.earned_money || 0) + earnedNow,
-            last_finish_time: null
-        }).eq('id', instructorId);
-
-        await _supabase.from('services_history').insert([{
-            instructor_id: instructorId,
-            student_name: service.full_name,
-            hours: (diffMins / 60).toFixed(1),
-            service_id: service.unique_id
-        }]);
-
-        await _supabase.from('school_services').update({ last_finish_time: now.toISOString() }).eq('id', service.id);
-
         stopProcessLocally();
-
     } catch (err) {
-        console.error("Xatolik stopLesson:", err.message);
+        console.error(err);
         await resetInstructorStatus(instructorId);
     }
 }
@@ -337,64 +293,35 @@ async function resetInstructorStatus(id) {
 }
 
 async function updateInstStats() {
-    const sessionStr = localStorage.getItem('inst_session');
-    if(!sessionStr) return;
-    const session = JSON.parse(sessionStr);
-
+    const session = JSON.parse(localStorage.getItem('inst_session'));
+    if(!session) return;
     const { data: inst } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
     if (inst) {
         if(document.getElementById('total-hours')) document.getElementById('total-hours').innerText = (inst.daily_hours / 60).toFixed(1);
-        if(document.getElementById('total-clients')) document.getElementById('total-clients').innerText = inst.total_clients || 0;
         if(document.getElementById('estimated-salary')) document.getElementById('estimated-salary').innerText = (inst.earned_money || 0).toLocaleString() + " UZS";
     }
 }
 
 async function loadClientList() {
-    const sessionStr = localStorage.getItem('inst_session');
-    if(!sessionStr) return;
-    const session = JSON.parse(sessionStr);
-
+    const session = JSON.parse(localStorage.getItem('inst_session'));
+    if(!session) return;
     const { data } = await _supabase.from('services_history').select('*').eq('instructor_id', session.id).order('created_at', {ascending: false});
     const listDiv = document.getElementById('client-list');
     if (listDiv && data) {
-        if (data.length > 0) {
-            listDiv.innerHTML = data.map(s => `
-                <div class="stat-card" style="text-align:left; margin-bottom:10px; border-left:4px solid var(--accent)">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div><b>${s.student_name}</b><br><small>${new Date(s.created_at).toLocaleString()}</small></div>
-                        <span style="color:var(--accent); font-weight:bold;">+${s.hours} s</span>
-                    </div>
-                </div>`).join('');
-        } else {
-            listDiv.innerHTML = `<p style="color:#94a3b8; text-align:center;">Hozircha mijozlar yo'q</p>`;
-        }
+        listDiv.innerHTML = data.length > 0 ? data.map(s => `
+            <div class="stat-card" style="text-align:left; margin-bottom:10px; border-left:4px solid var(--accent)">
+                <b>${s.student_name}</b><br><small>${new Date(s.created_at).toLocaleString()}</small>
+                <span style="float:right; color:var(--accent);">+${s.hours} s</span>
+            </div>`).join('') : '<p>Mijozlar yo\'q</p>';
     }
 }
 
 function closeModal() {
-    const modal = document.getElementById('studentModal');
-    if (modal) modal.style.display = 'none';
+    document.getElementById('studentModal').style.display = 'none';
     if (!activeTimer) isScanning = true;
-    currentStudent = null;
 }
 
-function logout() { confirmLogout(); }
-
-function confirmLogout() {
-    isScanning = false;
-    const modal = document.getElementById('studentModal');
-    document.getElementById('modal-data').innerHTML = `
-        <h2 style="color:white; text-align:center;">Chiqish</h2>
-        <p style="text-align:center; color:#94a3b8;">Rostdan ham tizimdan chiqmoqchimisiz?</p>`;
-    document.getElementById('modal-footer-btns').innerHTML = `
-        <div style="display:flex; gap:10px; width:100%;">
-            <button onclick="executeLogout()" class="btn-danger-modal" style="flex:1; background:#ef4444; color:white; border:none; padding:10px; border-radius:8px;">HA</button>
-            <button onclick="closeModal()" class="btn-cancel" style="flex:1; background:#64748b; color:white; border:none; padding:10px; border-radius:8px;">YO'Q</button>
-        </div>`;
-    modal.style.display = 'flex';
-}
-
-function executeLogout() {
+function logout() {
     localStorage.clear();
     window.location.replace('index.html');
 }
