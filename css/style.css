@@ -89,6 +89,30 @@ header h1 {
     margin-bottom: 40px;
 }
 
+.car-badge-filial {
+    background-color: #dcfce7 !important;
+    color: #15803d !important;
+    border: 1px solid #22c55e !important;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-weight: bold;
+    display: inline-block;
+    min-width: 100px;
+    text-align: center;
+}
+
+.car-badge-contract {
+    background-color: #fee2e2 !important;
+    color: #b91c1c !important;
+    border: 1px solid #ef4444 !important;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-weight: bold;
+    display: inline-block;
+    min-width: 100px;
+    text-align: center;
+}
+
 .card {
     background: var(--glass-bg);
     padding: 25px;

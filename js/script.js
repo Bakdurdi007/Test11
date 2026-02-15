@@ -34,7 +34,7 @@ async function showSection(sectionId) {
         'chek': 'Chek chiqarish bo\'limi',
         'avtomaktab': 'Avtomaktablar boshqaruvi',
         'instruktor': 'Instruktorlar boshqaruvi',
-        'hisobot': 'Ish faoliyati hisoboti'
+        'hisobot': 'Ish faoliyati nazorati'
     };
     document.getElementById('section-title').innerText = titles[sectionId] || 'Dashboard';
 
@@ -87,7 +87,7 @@ async function loadServicesTable() {
                     <td>${row.center_name}</td>
                     <td>${row.direction_category}</td>
                     <td>${row.group}</td>
-                    <td>${row.hours} soat</td>
+                    <td>${row.hours}</td>
                     <td>${Number(row.payment_amount).toLocaleString()}</td>
                     <td><span class="badge ${row.is_active ? 'active-badge' : 'used-badge'}" style="background: ${row.is_active ? '#10b981' : '#64748b'}; padding: 4px 8px; border-radius: 4px; color: white; font-size: 10px;">${row.is_active ? 'Active' : 'Used'}</span></td>
                     <td>${new Date(row.created_at).toLocaleTimeString()}</td>
@@ -98,24 +98,154 @@ async function loadServicesTable() {
 }
 
 // 7. Avtomaktablar ro'yxatini yuklash
+/**
+ * Avtomaktablar ro'yxatini jadval ko'rinishida chiqarish
+ * Barcha tugmalar center obyektiga moslangan
+ */
 async function fetchCentersList() {
     try {
-        const { data, error } = await supabaseClient.from('centers').select('*').order('created_at', { ascending: false });
+        // 1. Supabase'dan ma'lumotlarni olish
+        const { data: centers, error } = await supabaseClient
+            .from('centers')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
         const tbody = document.getElementById('centers-table-body');
-        if (tbody && data) {
-            tbody.innerHTML = data.map(center => `
+        if (!tbody) return;
+
+        // 2. Agar ma'lumot bo'lmasa
+        if (!centers || centers.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Ma\'lumot topilmadi</td></tr>';
+            return;
+        }
+
+        // 3. Jadvalni shakllantirish
+        tbody.innerHTML = centers.map(center => {
+            // Xavfsizlik uchun: Obyektni stringga o'tkazishda kotirovka xatolarini oldini olish
+            // btoa() ishlatish yoki atributga xavfsiz joylash lozim
+            const centerDataJson = encodeURIComponent(JSON.stringify(center));
+
+            return `
                 <tr>
                     <td><b>${center.name}</b></td>
-                    <td>${center.collaboration_type}</td>
-                    <td>${center.students_count}</td>
-                    <td>${new Date(center.created_at).toLocaleDateString()}</td>
+                    <td><span class="badge-collab">${center.collaboration_type}</span></td>
+                    <td>${center.students_count || 0}</td>
+                    <td>${new Date(center.created_at).toLocaleDateString('uz-UZ')}</td>
+                    <td style="white-space: nowrap;">
+                        <button class="action-btn view" title="Ko'rish" 
+                            onclick="viewCenter('${centerDataJson}')">👁️</button>
+                        
+                        <button class="action-btn edit" title="Tahrirlash" 
+                            onclick="editCenter('${centerDataJson}')">✏️</button>
+                        
+                        <button class="action-btn delete" title="O'chirish" 
+                            onclick="confirmDeleteCenter(${center.id}, '${center.name.replace(/'/g, "\\'")}')">🗑️</button>
+                    </td>
                 </tr>
-            `).join('');
-        }
-    } catch (err) { console.error(err); }
+            `;
+        }).join('');
+
+    } catch (err) {
+        console.error("fetchCentersList xatosi:", err.message);
+    }
 }
 
-// 8. Instruktorlar ro'yxatini yuklash
+/**
+ * Ma'lumotlarni qabul qilib oluvchi yordamchi funksiya namunasi
+ * (Atributdan ma'lumotni qayta o'qib olish uchun)
+ */
+function viewCenter(encodedData) {
+    const center = JSON.parse(decodeURIComponent(encodedData));
+    const modal = document.getElementById('instModal');
+    const body = document.getElementById('modal-body');
+    body.innerHTML = `
+        <div class="inst-view-card">
+            <h2 style="text-align:center; color:#3b82f6;">Markaz Ma'lumotlari</h2>
+            <p><b>Nomi:</b> ${center.name}</p>
+            <p><b>Turi:</b> ${center.collaboration_type}</p>
+            <p><b>O'quvchilar:</b> ${center.students_count}</p>
+            <p><b>Sana:</b> ${new Date(center.created_at).toLocaleString()}</p>
+        </div>
+        <div class="modal-footer"><button onclick="closeModal()" class="btn-save" style="background:#64748b; width:100%;">YOPISH</button></div>`;
+    modal.style.display = 'flex';
+}
+
+function editCenter(encodedData) {
+    const center = JSON.parse(decodeURIComponent(encodedData));
+    document.getElementById('c_id').value = center.id;
+    document.getElementById('c_name').value = center.name;
+    document.getElementById('c_collab').value = center.collaboration_type;
+    document.getElementById('c_students').value = center.students_count;
+
+    const btn = document.querySelector('#centerForm button[type="submit"]');
+    btn.innerText = "O'ZGARTIRISHNI SAQLASH";
+    btn.style.background = "#3b82f6";
+}
+
+function confirmDeleteCenter(id, name) {
+    const modal = document.getElementById('instModal');
+    const body = document.getElementById('modal-body');
+    body.innerHTML = `
+        <div style="text-align:center; color:#334155;">
+            <h3 style="color:#ef4444;">O'chirilsinmi?</h3>
+            <p><b>${name}</b></p>
+            <div style="display:flex; gap:10px; margin-top:20px;">
+                <button onclick="deleteCenter(${id})" class="btn-save" style="background:#ef4444; flex:1;">HA</button>
+                <button onclick="closeModal()" class="btn-save" style="background:#22c55e; flex:1;">YO'Q</button>
+            </div>
+        </div>`;
+    modal.style.display = 'flex';
+}
+
+async function deleteCenter(id) {
+    const { error } = await supabaseClient.from('centers').delete().eq('id', id);
+    if (!error) { closeModal(); await fetchCentersList(); }
+}
+
+function closeModal() { document.getElementById('instModal').style.display = 'none'; }
+
+// ==========================================
+// HODISALARNI BIRIKTIRISH
+// ==========================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    initDashboard();
+
+    // Avtomaktab Formasi
+    document.getElementById('centerForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const cid = document.getElementById('c_id').value;
+        const centerData = {
+            name: document.getElementById('c_name').value,
+            collaboration_type: document.getElementById('c_collab').value,
+            students_count: parseInt(document.getElementById('c_students').value)
+        };
+
+        let res;
+        if (cid) {
+            res = await supabaseClient.from('centers').update(centerData).eq('id', cid);
+        } else {
+            res = await supabaseClient.from('centers').insert([centerData]);
+        }
+
+        if (!res.error) {
+            e.target.reset();
+            document.getElementById('c_id').value = "";
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.innerText = "MARKAZNI QO'SHISH";
+            btn.style.background = "";
+            await fetchCentersList();
+            alert("Muvaffaqiyatli saqlandi!");
+        }
+    });
+
+    // Logout
+    document.getElementById('logout-btn')?.addEventListener('click', logout);
+});
+
+// 8. Instruktorlar ro'yxatini yuklash (Badge va Xavfsiz uzatish bilan)
 async function fetchInstructorsList() {
     try {
         const { data, error } = await supabaseClient
@@ -125,27 +255,43 @@ async function fetchInstructorsList() {
 
         const tbody = document.getElementById('instructors-table-body');
         if (tbody && data) {
-            tbody.innerHTML = data.map(inst => `
+            tbody.innerHTML = data.map(inst => {
+                const instData = encodeURIComponent(JSON.stringify(inst));
+                const source = inst.source || "";
+
+                // Ranglarni aniqlash - qisman moslikni tekshiramiz
+                let carBadgeClass = "";
+                if (source.includes("Filial")) {
+                    carBadgeClass = "car-badge-filial";
+                } else if (source.includes("Shartnoma") || source.includes("Hamkor")) {
+                    carBadgeClass = "car-badge-contract";
+                }
+
+                return `
                 <tr>
                     <td><b>${inst.full_name}</b></td>
-                    <td>${inst.car_number || '-'}</td>
-                    <td>${inst.source || '-'}</td>
-                    <td>${inst.daily_hours || 0} s</td>
-                    <td>${Number(inst.earned_money || 0).toLocaleString()}</td>
-                    <td><span class="status-badge ${inst.status}">${inst.status === 'active' ? 'Faol' : 'Nofaol'}</span></td>
-                    <td style="white-space: nowrap;">
-                        <button class="action-btn" title="Ko'rish" onclick='viewInstructor(${JSON.stringify(inst)})'>👁️</button>
-                        <button class="action-btn" title="Tahrirlash" onclick='editInstructor(${JSON.stringify(inst)})'>✏️</button>
-                        <button class="action-btn" title="O'chirish" onclick="confirmDeleteInstructor(${inst.id}, '${inst.full_name}')">🗑️</button>
+                    <td>
+                        <span class="${carBadgeClass}">${inst.car_number || '-'}</span>
                     </td>
-                </tr>
-            `).join('');
+                    <td>${source}</td>
+                    <td>${inst.login || '-'}</td>
+                    <td>${inst.password || '-'}</td>
+                    <td>${new Date(inst.created_at).toLocaleString('uz-UZ')}</td>
+                    <td style="white-space: nowrap;">
+                        <button class="action-btn" title="Ko'rish" onclick="viewInstructor('${instData}')">👁️</button>
+                        <button class="action-btn" title="Tahrirlash" onclick="editInstructor('${instData}')">✏️</button>
+                        <button class="action-btn" title="O'chirish" onclick="confirmDeleteInstructor(${inst.id}, '${inst.full_name.replace(/'/g, "\\'")}')">🗑️</button>
+                    </td>
+                </tr>`;
+            }).join('');
         }
     } catch (err) { console.error("Instruktorlarni yuklashda xato:", err); }
 }
 
 // 12. Instruktor Ma'lumotlarini Ko'rish
-function viewInstructor(inst) {
+// BU MUHIM: Endi viewInstructor va editInstructor funksiyalarini ham encoded ma'lumotni qabul qiladigan qilish kerak:
+function viewInstructor(encodedData) {
+    const inst = JSON.parse(decodeURIComponent(encodedData));
     const modal = document.getElementById('instModal');
     const body = document.getElementById('modal-body');
     body.innerHTML = `
@@ -161,10 +307,12 @@ function viewInstructor(inst) {
         <div class="modal-footer" style="margin-top: 25px;"><button onclick="closeModal()" class="btn-save" style="background:#475569; width: 100%;">YOPISH</button></div>
     `;
     modal.style.display = 'flex';
+    // Modalni ochish kodi...
 }
 
 // 13. Tahrirlash funksiyasi
-function editInstructor(inst) {
+function editInstructor(encodedData) {
+    const inst = JSON.parse(decodeURIComponent(encodedData));
     document.getElementById('inst_id').value = inst.id;
     document.getElementById('inst_fullName').value = inst.full_name;
     document.getElementById('inst_carNumber').value = inst.car_number;
@@ -176,30 +324,6 @@ function editInstructor(inst) {
     document.getElementById('inst_submit_btn').innerText = "O'ZGARTIRISHNI SAQLASH";
     document.getElementById('inst_submit_btn').style.background = "#3b82f6";
     document.getElementById('inst_cancel_btn').style.display = "block";
-}
-
-// 14. O'chirishni tasdiqlash
-function confirmDeleteInstructor(id, name) {
-    const modal = document.getElementById('instModal');
-    const body = document.getElementById('modal-body');
-    body.innerHTML = `<div style="text-align:center; padding: 10px; color: #f1f5f9;"><h3 style="color: #f87171;">O'chirilsinmi?</h3><p><b>${name}</b></p><div style="display:flex; gap:12px; margin-top:25px;"><button onclick="deleteInstructor(${id})" class="btn-save" style="background:#ef4444; flex:1;">HA</button><button onclick="closeModal()" class="btn-save" style="background:#22c55e; flex:1;">YO'Q</button></div></div>`;
-    modal.style.display = 'flex';
-}
-
-async function deleteInstructor(id) {
-    const { error } = await supabaseClient.from('instructors').delete().eq('id', id);
-    if (!error) { closeModal(); await fetchInstructorsList(); }
-}
-
-function closeModal() { document.getElementById('instModal').style.display = 'none'; }
-
-function resetInstForm() {
-    document.getElementById('instructorForm').reset();
-    document.getElementById('inst_id').value = "";
-    document.getElementById('inst-form-title').innerText = "Yangi instruktor";
-    document.getElementById('inst_submit_btn').innerText = "SAQLASH";
-    document.getElementById('inst_submit_btn').style.background = "#10b981";
-    document.getElementById('inst_cancel_btn').style.display = "none";
 }
 
 // 9. Chek chiqarish funksiyasi
@@ -252,48 +376,78 @@ function printReceipt(item) {
 async function initDashboard() {
     checkUserSession();
     try {
-        // Supabase'dan barcha adminlarni olish
-        const { data: admins, error } = await supabaseClient
+        // --- 1. ADMINLAR VA ASOSIY MA'LUMOTLARNI OLISH ---
+        const { data: admins, error: adminError } = await supabaseClient
             .from('admins')
             .select('id, admin_fullname, login, created_at')
             .order('created_at', { ascending: false });
 
-        if (error) throw error;
+        if (adminError) throw adminError;
 
+        // --- 2. INSTRUKTORLAR SONINI OLISH ---
+        const { count: instCount, error: instError } = await supabaseClient
+            .from('instructors')
+            .select('*', { count: 'exact', head: true });
+
+        if (instError) throw instError;
+
+        // --- 3. BUGUNGI KUNLIK STATISTIKANI HISOBLASH ---
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0); // Bugun 00:00:00 dan boshlab
+        const todayISO = todayStart.toISOString();
+
+        const { data: todayTickets, error: ticketError } = await supabaseClient
+            .from('school_services')
+            .select('payment_amount')
+            .gte('created_at', todayISO);
+
+        if (ticketError) throw ticketError;
+
+        const ticketCount = todayTickets ? todayTickets.length : 0;
+        const totalSum = todayTickets ? todayTickets.reduce((sum, item) => sum + Number(item.payment_amount || 0), 0) : 0;
+
+        // --- 4. STATISTIKA KARTALARINI YANGILASH ---
         if (admins) {
-            // 1. Adminlar sonini yangilash
-            const countElement = document.getElementById('admin-count');
-            if (countElement) countElement.innerText = admins.length;
-
-            // 2. Statusni yangilash
-            const statusElement = document.getElementById('db-status');
-            if (statusElement) statusElement.innerText = "Online";
-
-            // 3. JADVALNI TO'LDIRISH
-            const tableBody = document.getElementById('admin-table-body');
-            if (tableBody) {
-                // Har bir admin uchun alohida sanash (Promise.all ishlatamiz tezlik uchun)
-                const rows = await Promise.all(admins.map(async (admin) => {
-                    const { count } = await supabaseClient
-                        .from('school_services')
-                        .select('*', { count: 'exact', head: true })
-                        .eq('created_by', admin.id); // Bog'langan cheklarni sanaymiz
-
-                    return `
-                        <tr>
-                            <td>${admin.id}</td>
-                            <td>${admin.admin_fullname || 'Ism kiritilmagan'}</td>
-                            <td><b style="color: #38bdf8;">${count || 0}</b></td>
-                            <td><b>${admin.login}</b></td>
-                            <td>${new Date(admin.created_at).toLocaleString('uz-UZ')}</td>
-                        </tr>
-                    `;
-                }));
-                tableBody.innerHTML = rows.join('');
-            }
+            const adminCountEl = document.getElementById('admin-count');
+            if (adminCountEl) adminCountEl.innerText = admins.length;
         }
 
-        // 4. JORIY TIZIMGA KIRGAN ADMIN ISMINI VA LOGININI KO'RSATISH
+        const instCountEl = document.getElementById('instructor-count');
+        if (instCountEl) instCountEl.innerText = instCount || 0;
+
+        const ticketCountEl = document.getElementById('ticket-count');
+        if (ticketCountEl) ticketCountEl.innerText = ticketCount;
+
+        const summaCountEl = document.getElementById('summa-count');
+        if (summaCountEl) summaCountEl.innerText = totalSum.toLocaleString() + " UZS";
+
+        // Statusni yangilash
+        const statusElement = document.getElementById('db-status');
+        if (statusElement) statusElement.innerText = "Online";
+
+        // --- 5. ADMINLAR JADVALINI TO'LDIRISH ---
+        const tableBody = document.getElementById('admin-table-body');
+        if (tableBody && admins) {
+            const rows = await Promise.all(admins.map(async (admin) => {
+                const { count } = await supabaseClient
+                    .from('school_services')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('created_by', admin.id);
+
+                return `
+                    <tr>
+                        <td>${admin.id}</td>
+                        <td>${admin.admin_fullname || 'Ism kiritilmagan'}</td>
+                        <td><b style="color: #38bdf8;">${count || 0}</b></td>
+                        <td><b>${admin.login}</b></td>
+                        <td>${new Date(admin.created_at).toLocaleString('uz-UZ')}</td>
+                    </tr>
+                `;
+            }));
+            tableBody.innerHTML = rows.join('');
+        }
+
+        // --- 6. JORIY ADMIN ISMINI KO'RSATISH ---
         const sessionData = JSON.parse(localStorage.getItem("admin_session"));
         const adminNameDisplay = document.getElementById('admin-name');
 
@@ -378,39 +532,113 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!error) { fetchCentersList(); e.target.reset(); alert("Markaz qo'shildi!"); }
     });
 
-    // Instruktor formasi
-    document.getElementById('instructorForm')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const instId = document.getElementById('inst_id').value;
-        const instructorData = {
-            full_name: document.getElementById('inst_fullName').value,
-            car_number: document.getElementById('inst_carNumber').value,
-            source: document.getElementById('inst_source').value,
-            login: document.getElementById('inst_login').value,
-            password: document.getElementById('inst_password').value,
-            status: document.getElementById('inst_status').value
-        };
+    checkUserSession();
+    showSection('asosiy');
+    initDashboard(); // Statistikani yangilash uchun
 
-        let res;
-        if (instId) {
-            res = await supabaseClient.from('instructors').update(instructorData).eq('id', instId);
-        } else {
-            res = await supabaseClient.from('instructors').insert([{...instructorData, daily_hours: 0, monthly_hours: 0, earned_money: 0}]);
-        }
+    // --- INSTRUKTOR FORMASINI SAQLASH (YANGI VARIANT) ---
+    const instForm = document.getElementById('instructorForm');
 
-        if(!res.error) {
-            resetInstForm();
-            await fetchInstructorsList();
-            alert("Muvaffaqiyatli saqlandi!");
-        } else {
-            alert("Xato: " + res.error.message);
-        }
+    document.getElementById('inst_carNumber')?.addEventListener('input', function() {
+        this.value = this.value.toUpperCase();
     });
 
+    if (instForm) {
+        instForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const instId = document.getElementById('inst_id').value;
+            const carNumber = document.getElementById('inst_carNumber').value.trim();
+            const loginPhone = document.getElementById('inst_login').value.trim();
+            const submitBtn = document.getElementById('inst_submit_btn');
+
+            submitBtn.disabled = true;
+            submitBtn.innerText = "TEKSHIRILMOQDA...";
+
+            try {
+                // 1. Mashina raqamini tekshirish
+                let carQuery = supabaseClient.from('instructors').select('id').eq('car_number', carNumber);
+                if (instId) carQuery = carQuery.neq('id', instId);
+                const { data: carExists } = await carQuery;
+
+                if (carExists && carExists.length > 0) {
+                    alert(`⚠️ Xatolik: ${carNumber} raqamli avtomobil allaqachon mavjud!`);
+                    return;
+                }
+
+                // 2. Loginni tekshirish
+                let loginQuery = supabaseClient.from('instructors').select('id').eq('login', loginPhone);
+                if (instId) loginQuery = loginQuery.neq('id', instId);
+                const { data: loginExists } = await loginQuery;
+
+                if (loginExists && loginExists.length > 0) {
+                    alert(`⚠️ Xatolik: ${loginPhone} logini band!`);
+                    return;
+                }
+
+                // 3. Ma'lumotlarni saqlash
+                const instructorData = {
+                    full_name: document.getElementById('inst_fullName').value,
+                    car_number: carNumber,
+                    source: document.getElementById('inst_source').value,
+                    login: loginPhone,
+                    password: document.getElementById('inst_password').value,
+                    status: document.getElementById('inst_status').value
+                };
+
+                let result;
+                if (instId) {
+                    result = await supabaseClient.from('instructors').update(instructorData).eq('id', instId);
+                } else {
+                    result = await supabaseClient.from('instructors').insert([{
+                        ...instructorData, daily_hours: 0, monthly_hours: 0, earned_money: 0
+                    }]);
+                }
+
+                if (result.error) throw result.error;
+
+                alert("Muvaffaqiyatli saqlandi!");
+                resetInstForm();
+                await fetchInstructorsList();
+
+            } catch (err) {
+                alert("Xatolik: " + err.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = instId ? "O'ZGARTIRISHNI SAQLASH" : "SAQLASH";
+            }
+        });
+    }
     document.getElementById('inst_cancel_btn')?.addEventListener('click', resetInstForm);
+    document.getElementById('logout-btn')?.addEventListener('click', logout);
 
     initDashboard();
 });
+
+// 14. O'chirishni tasdiqlash
+function confirmDeleteInstructor(id, name) {
+    const modal = document.getElementById('instModal');
+    const body = document.getElementById('modal-body');
+    body.innerHTML = `<div style="text-align:center; padding: 10px; color: #f1f5f9;"><h3 style="color: #f87171;">O'chirilsinmi?</h3><p><b>${name}</b></p><div style="display:flex; gap:12px; margin-top:25px;"><button onclick="deleteInstructor(${id})" class="btn-save" style="background:#ef4444; flex:1;">HA</button><button onclick="closeModal()" class="btn-save" style="background:#22c55e; flex:1;">YO'Q</button></div></div>`;
+    modal.style.display = 'flex';
+}
+
+async function deleteInstructor(id) {
+    const { error } = await supabaseClient.from('instructors').delete().eq('id', id);
+    if (!error) { closeModal(); await fetchInstructorsList(); }
+}
+
+function closeModal() { document.getElementById('instModal').style.display = 'none'; }
+
+function resetInstForm() {
+    document.getElementById('instructorForm').reset();
+    document.getElementById('inst_id').value = "";
+    document.getElementById('inst-form-title').innerText = "Yangi instruktor";
+    document.getElementById('inst_submit_btn').innerText = "SAQLASH";
+    document.getElementById('inst_submit_btn').style.background = "#10b981";
+    document.getElementById('inst_cancel_btn').style.display = "none";
+}
+
 
 // 15. Chek hisoboti
 async function generateFinancialReport() {

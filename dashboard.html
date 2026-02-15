@@ -100,11 +100,11 @@
             <h2>Index Avtodrom</h2>
         </div>
         <ul>
-            <li class="nav-item active" onclick="showSection('asosiy')">Adminlar</li>
+            <li class="nav-item active" onclick="showSection('asosiy')">Admin panel</li>
             <li class="nav-item" onclick="showSection('chek')">Chek chiqarish</li>
             <li class="nav-item" onclick="showSection('avtomaktab')">Avtomaktab</li>
             <li class="nav-item" onclick="showSection('instruktor')">Instruktor</li>
-            <li class="nav-item" onclick="showSection('hisobot')">Hisobot</li>
+            <li class="nav-item" onclick="showSection('hisobot')">Nazorat</li>
             <li id="logout-btn" style="cursor: pointer; color: #f87171; margin-top: 20px;">Chiqish</li>
         </ul>
     </nav>
@@ -113,6 +113,7 @@
         <header>
             <h1 id="section-title">Asosiy</h1>
             <div class="user-info">
+                <p id="db-status">Bog'lanmoqda...</p>
                 <span id="admin-name">Yuklanmoqda...</span>
             </div>
         </header>
@@ -124,21 +125,29 @@
                     <p id="admin-count">0</p>
                 </div>
                 <div class="card">
-                    <h3>Holat</h3>
-                    <p id="db-status">Bog'lanmoqda...</p>
+                    <h3>Instruktorlar soni</h3>
+                    <p id="instructor-count">0</p>
+                </div>
+                <div class="card">
+                    <h3>Bugungi cheklar</h3>
+                    <p id="ticket-count">0</p>
+                </div>
+                <div class="card">
+                    <h3>Bugungi tushum</h3>
+                    <p id="summa-count">0</p>
                 </div>
             </div>
             <div class="stats">
                 <div class="card">
                     <h3>Chek hisoboti</h3>
-                    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
-                        <select id="report-period" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                    <div style="flex-direction: column; gap: 10px; margin-top: 10px;">
+                        <select id="report-period" style="width: 60%; padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
                             <option value="1day">1 kunlik hisobot</option>
                             <option value="1week">1 haftalik hisobot</option>
                             <option value="1month">1 oylik hisobot</option>
                             <option value="1year">1 yillik hisobot</option>
                         </select>
-                        <button onclick="generateFinancialReport()" class="btn-confirm" style="background: #3b82f6; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                        <button onclick="generateFinancialReport()" class=" btn-confirm" style="width: 39%; background: #3b82f6; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; font-weight: bold;">
                             HISOBOTNI CHIQARISH (A4)
                         </button>
                     </div>
@@ -253,6 +262,8 @@
                 <div class="form-side card" style="flex: 0 0 350px;">
                     <h3>Yangi o'quv markazi</h3>
                     <form id="centerForm">
+                        <input type="hidden" id="c_id">
+
                         <div class="input-grid">
                             <div class="group">
                                 <label>O'quv markaz nomi</label>
@@ -284,6 +295,7 @@
                                 <th>Hamkorlik</th>
                                 <th>Soni</th>
                                 <th>Sana</th>
+                                <th>Amallar</th>
                             </tr>
                             </thead>
                             <tbody id="centers-table-body"></tbody>
@@ -310,13 +322,13 @@
                         <div class="group">
                             <label>Qayerdan</label>
                             <select id="inst_source" required>
-                                <option value="Filial hodimi">Filial hodimi</option>
-                                <option value="Shartnoma asosida">Shartnoma asosida</option>
+                                <option value="Filial">Filial hodimi</option>
+                                <option value="Shartnoma">Shartnoma asosida</option>
                             </select>
                         </div>
                         <div class="group">
                             <label>Login</label>
-                            <input type="text" id="inst_login" placeholder="Login" required>
+                            <input type="number" id="inst_login" placeholder="998" required>
                         </div>
                         <div class="group">
                             <label>Parol</label>
@@ -344,9 +356,9 @@
                                 <th>F.I.O</th>
                                 <th>Mashina</th>
                                 <th>Qayerdan</th>
-                                <th>Kunlik (s)</th>
-                                <th>Daromad</th>
-                                <th>Holat</th>
+                                <th>Login</th>
+                                <th>Parol</th>
+                                <th>Saqlangan vaqti</th>
                                 <th>Amallar</th>
                             </tr>
                             </thead>
