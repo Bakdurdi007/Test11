@@ -162,15 +162,14 @@ function showStudentModal(service) {
  */
 async function confirmService() {
     if (!currentStudent) return;
-
     const startBtn = document.getElementById('start-btn');
     startBtn.disabled = true;
     startBtn.innerText = "YUKLANMOQDA...";
 
     try {
         const session = JSON.parse(localStorage.getItem('inst_session'));
-        const hoursFromTicket = Number(currentStudent.hours); // Chekdagi soat (masalan: 2)
-        const minutesToAdd = hoursFromTicket * 60; // Soatni minutga o'tkazish (120 min)
+        const hoursFromTicket = Number(currentStudent.hours); // Masalan: 2 soat
+        const minutesToAdd = hoursFromTicket * 60; // Minutga o'tkazish: 120 minut
 
         const now = new Date();
         const finishDate = new Date(now.getTime() + (hoursFromTicket * 3600000));
@@ -184,61 +183,44 @@ async function confirmService() {
 
         if (instError) throw instError;
 
-        // 2. Sana tekshiruvi (Kunlik va oylik soatlarni nolga tushirish uchun)
+        // 2. Yangi kun yoki yangi oy ekanligini tekshirish
         const lastUpdate = inst.updated_at ? new Date(inst.updated_at) : new Date(0);
-
         const isNewDay = lastUpdate.toDateString() !== now.toDateString();
         const isNewMonth = lastUpdate.getMonth() !== now.getMonth() || lastUpdate.getFullYear() !== now.getFullYear();
 
-        // 3. Yangi qiymatlarni hisoblash
-        // Agar yangi kun bo'lsa daily_hours 0 dan boshlanadi
-        let newDailyHours = isNewDay ? minutesToAdd : (inst.daily_hours || 0) + minutesToAdd;
+        // 3. Soatlarni hisoblash (Yangi kun bo'lsa 0 dan boshlash)
+        let newDaily = isNewDay ? minutesToAdd : (inst.daily_hours || 0) + minutesToAdd;
+        let newMonthly = isNewMonth ? minutesToAdd : (inst.monthly_hours || 0) + minutesToAdd;
 
-        // Agar yangi oy bo'lsa monthly_hours 0 dan boshlanadi
-        let newMonthlyHours = isNewMonth ? minutesToAdd : (inst.monthly_hours || 0) + minutesToAdd;
-
-        // Maoshni hisoblash (Namuna: 1 soat uchun 40,000 so'm)
-        const newEarnedMoney = (inst.earned_money || 0) + (hoursFromTicket * 40000);
-
-        // 4. SUPABASE NI YANGILASH
+        // 4. Bazani yangilash
         const { error: updateError } = await _supabase
             .from('instructors')
             .update({
                 status: 'busy',
-                last_finish_time: finishDate.toISOString(),
-                daily_hours: newDailyHours,
-                monthly_hours: newMonthlyHours,
-                earned_money: newEarnedMoney,
-                total_clients: (inst.total_clients || 0) + 1,
-                updated_at: now.toISOString() // Bu ustun keyingi safar sanani solishtirish uchun kerak
+                last_finish_time: finishDate.toISOString(), // Xatolik bergan ustun shu yerda
+                daily_hours: newDaily,
+                monthly_hours: newMonthly,
+                earned_money: (inst.earned_money || 0) + (hoursFromTicket * 40000), // Tarif bo'yicha
+                updated_at: now.toISOString()
             })
             .eq('id', session.id);
 
         if (updateError) throw updateError;
 
-        // 5. Chekni yaroqsiz qilish (is_active: false)
-        await _supabase
-            .from('school_services')
-            .update({ is_active: false })
-            .eq('unique_id', currentStudent.unique_id);
-
-        // 6. Tarixga yozish (History)
+        // 5. Chekni yopish va tarixga yozish
+        await _supabase.from('school_services').update({ is_active: false }).eq('unique_id', currentStudent.unique_id);
         await _supabase.from('services_history').insert([{
             instructor_id: session.id,
             student_name: currentStudent.full_name,
-            hours: hoursFromTicket, // Bu yerda asil soatni saqlash qulayroq
+            hours: hoursFromTicket,
             service_id: currentStudent.unique_id
         }]);
 
-        // 7. Taymerni ishga tushirish va modalni yopish
         startTimerDisplay(hoursFromTicket * 3600000);
         closeModal();
         updateInstStats();
 
-        alert("Mashg'ulot boshlandi. Muvaffaqiyatli saqlandi!");
-
     } catch (err) {
-        console.error("Xatolik yuz berdi:", err.message);
         alert("Xatolik: " + err.message);
     } finally {
         startBtn.disabled = false;
