@@ -28,47 +28,62 @@ document.addEventListener('DOMContentLoaded', () => {
  * ADMIN PANELDA TO'XTATISH TUGMASI BOSILSA REAL-VAQTDA ILG'ASH
  */
 function subscribeToChanges() {
-    const session = JSON.parse(localStorage.getItem('inst_session'));
-    if (!session) return;
+    const sessionStr = localStorage.getItem('inst_session');
+    if (!sessionStr) return;
+    const session = JSON.parse(sessionStr);
 
-    // Instruktorlar jadvalidagi o'zgarishlarni kuzatamiz
+    console.log("Real-time kuzatuv yoqildi: ", session.id);
+
     _supabase
-        .channel('public:instructors')
+        .channel('instructor_status_changes') // Kanal nomini aniqroq beramiz
         .on('postgres_changes', {
             event: 'UPDATE',
             schema: 'public',
             table: 'instructors',
             filter: `id=eq.${session.id}`
         }, (payload) => {
-            // Agar admin statusni 'active' ga o'zgartirsa (To'xtatish bossa)
-            if (payload.new.status === 'active' && payload.old.status === 'busy') {
-                console.log("Admin darsni to'xtatdi.");
-                stopProcessLocally();
+            console.log("Bazada o'zgarish aniqlandi:", payload.new.status);
+
+            // Shartni soddalashtiramiz: Agar yangi status 'active' bo'lsa va ilovada taymer hali ham ishlayotgan bo'lsa
+            if (payload.new.status === 'active') {
+                if (activeTimer) {
+                    console.log("Admin darsni to'xtatdi. Mahalliy jarayonlar yopilmoqda...");
+                    stopProcessLocally();
+                }
             }
         })
         .subscribe();
 }
-
 /**
  * Ilovada darsni mahalliy (local) to'xtatish va holatni tiklash
  */
 function stopProcessLocally() {
-    if (activeTimer) clearInterval(activeTimer);
-    activeTimer = null;
-    isScanning = true;
-
-    // UI ni yangilash (Taymerni o'chirib skanerni qaytarish)
-    const readerDiv = document.getElementById('reader');
-    if (readerDiv) {
-        readerDiv.innerHTML = ""; // Skaner konteynerini tozalash
-        initScanner(); // Skanerni qayta ishga tushirish
+    // 1. Taymerni to'xtatish
+    if (activeTimer) {
+        clearInterval(activeTimer);
+        activeTimer = null;
     }
 
+    // 2. Skanerlashga ruxsat berish
+    isScanning = true;
+
+    // 3. UI ni tozalash (Taymer o'rniga skaner konteynerini qaytarish)
+    const readerDiv = document.getElementById('reader');
+    if (readerDiv) {
+        readerDiv.innerHTML = ""; // Taymer divini o'chirish
+        // Skanerni qayta ishga tushirish uchun biroz kutish (render xatosi bo'lmasligi uchun)
+        setTimeout(() => {
+            initScanner();
+        }, 500);
+    }
+
+    // 4. Statistikani yangilash
     updateInstStats();
     loadClientList();
-    alert("Dars admin tomonidan to'xtatildi yoki yakunlandi.");
-}
 
+    // 5. Agar modal ochiq bo'lsa yopish
+    closeModal();
+}
 /**
  * Tizimga kirganlikni tekshirish
  */
