@@ -1,19 +1,18 @@
 /**
- * INSTRUCTOR-SCRIPT.JS - Instruktorlar mobil ilovasi uchun to'liq mantiq
- * Realtime faollashtirilgan versiya
+ * INSTRUCTOR-SCRIPT.JS - Instruktorlar mobil ilovasi uchun asosiy mantiq
  */
 
 // 1. Supabase ulanish sozlamalari
 const SUPABASE_URL = 'https://sqgdmanmnvioijducopi.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxZ2RtYW5tbnZpb2lqZHVjb3BpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4Nzk1ODUsImV4cCI6MjA4NjQ1NTU4NX0.CmP9-bQaxQDAOKnVAlU4tkpRHmFlfXVEW2-tYJ52R90';
 
+// Supabase klientini yaratish
 const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Global o'zgaruvchilar
 let currentStudent = null;
 let isScanning = true;
 let activeTimer = null;
-const html5QrCode = new Html5Qrcode("reader");
 
 // Sahifa yuklanganda ishga tushadigan asosiy qism
 document.addEventListener('DOMContentLoaded', () => {
@@ -22,16 +21,15 @@ document.addEventListener('DOMContentLoaded', () => {
     initScanner();
     loadClientList();
     syncActiveLesson();
-    subscribeToChanges(); // REALTIME ULANIYOTGAN JOYI
+    subscribeToChanges(); // Admin to'xtatishini kuzatish
 });
 
 /**
- * 2. REALTIME: ADMIN PANEL BILAN SINXRONIZATSIYA
+ * ADMIN PANELDA TO'XTATISH TUGMASI BOSILSA REAL-VAQTDA JAVOB BERISH
  */
 function subscribeToChanges() {
-    const sessionStr = localStorage.getItem('inst_session');
-    if (!sessionStr) return;
-    const session = JSON.parse(sessionStr);
+    const session = JSON.parse(localStorage.getItem('inst_session'));
+    if (!session) return;
 
     _supabase
         .channel('public:instructors')
@@ -41,31 +39,28 @@ function subscribeToChanges() {
             table: 'instructors',
             filter: `id=eq.${session.id}`
         }, (payload) => {
-            console.log("Bazada o'zgarish ilg'andi:", payload.new.status);
-
-            // Agar admin statusni 'active' (BO'SH) qilsa, taymerni to'xtatamiz
+            // Agar admin statusni 'active' (BO'SH) ga o'zgartirsa, ilova to'xtashi kerak
             if (payload.new.status === 'active') {
+                console.log("Dars to'xtatildi yoki yakunlandi.");
                 stopProcessLocally();
             }
-
-            // Statistikani har qanday o'zgarishda yangilaymiz
-            updateInstStats();
         })
         .subscribe();
 }
 
 /**
- * 3. TAYMERNI TO'XTATISH VA SCANNERNI QAYTARISH
+ * Ilovada darsni mahalliy to'xtatish va interfeysni yangilash
  */
 function stopProcessLocally() {
     if (activeTimer) clearInterval(activeTimer);
     activeTimer = null;
     isScanning = true;
 
+    // UI ni skanerlash holatiga qaytarish
     const readerDiv = document.getElementById('reader');
     if (readerDiv) {
         readerDiv.innerHTML = "";
-        initScanner(); // Skanerni qayta yoqish
+        initScanner();
     }
 
     updateInstStats();
@@ -73,7 +68,7 @@ function stopProcessLocally() {
 }
 
 /**
- * 4. SEANSNI TEKSHIRISH
+ * Tizimga kirganlikni tekshirish
  */
 function checkSession() {
     const sessionStr = localStorage.getItem('inst_session');
@@ -87,7 +82,33 @@ function checkSession() {
 }
 
 /**
- * 5. SAHIFA YANGILANGANDA JORIY DARSNI TIKLASH
+ * Ovozli signallar
+ */
+function playSound(type) {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        if (type === 'warning') {
+            osc.frequency.value = 440;
+            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.8);
+        } else if (type === 'finish') {
+            osc.frequency.value = 580;
+            gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 3);
+            osc.start();
+            osc.stop(ctx.currentTime + 3);
+        }
+    } catch (e) { console.error("Audio xatosi:", e); }
+}
+
+/**
+ * Darsni sinxronizatsiya qilish
  */
 async function syncActiveLesson() {
     const session = JSON.parse(localStorage.getItem('inst_session'));
@@ -101,15 +122,14 @@ async function syncActiveLesson() {
         if (diff > 0) {
             startTimerDisplay(diff);
         } else {
-            // Vaqt tugab bo'lgan bo'lsa
-            await stopLessonAndCalculate(session.id);
+            // Vaqt tugagan bo'lsa, statusni 'active' qilish
+            await resetInstructorStatus(session.id);
         }
     }
 }
 
-/**
- * 6. QR SCANNER MANTIQI
- */
+const html5QrCode = new Html5Qrcode("reader");
+
 function initScanner() {
     html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, onScanSuccess)
         .catch(err => console.error("Skaner xatosi:", err));
@@ -122,7 +142,7 @@ async function onScanSuccess(decodedText) {
     const { data: inst } = await _supabase.from('instructors').select('status').eq('id', session.id).single();
 
     if (inst && inst.status === 'busy') {
-        alert("Siz hozir bandsiz! Avvalgi darsni tugatish kerak.");
+        alert("Siz hozir bandsiz!");
         return;
     }
 
@@ -138,9 +158,6 @@ async function onScanSuccess(decodedText) {
     }
 }
 
-/**
- * 7. MODAL VA DARSNI BOSHLASH
- */
 function showStudentModal(service) {
     const modal = document.getElementById('studentModal');
     const dataArea = document.getElementById('modal-data');
@@ -157,47 +174,48 @@ function showStudentModal(service) {
                 <p>⌛ <b>Vaqt:</b> ${service.hours} soat</p>
                 <p>💰 <b>To'lov:</b> ${Number(service.payment_amount).toLocaleString()} UZS</p>
             </div>`;
-        footerArea.innerHTML = `<button id="start-btn" onclick="confirmService()" class="btn-confirm" style="background:#10b981; color:white; width:100%; padding:14px; border-radius:10px; border:none; font-weight:bold;">BOSHLASH</button>`;
+        footerArea.innerHTML = `
+            <button id="start-btn" onclick="confirmService()" class="btn-confirm" style="background:#10b981; color:white; width:100%; padding:14px; border-radius:10px; border:none; font-weight:bold; cursor:pointer;">BOSHLASH</button>`;
     }
     modal.style.display = 'flex';
 }
 
+/**
+ * Darsni tasdiqlash va boshlash
+ */
 async function confirmService() {
     if (!currentStudent) return;
     const startBtn = document.getElementById('start-btn');
     startBtn.disabled = true;
-    startBtn.innerText = "YUKLANMOQDA...";
 
     try {
         const session = JSON.parse(localStorage.getItem('inst_session'));
-        const hours = Number(currentStudent.hours);
         const now = new Date();
-        const finishDate = new Date(now.getTime() + (hours * 3600000));
+        const finishDate = new Date(now.getTime() + (Number(currentStudent.hours) * 3600000));
 
-        // 1. Instruktor statusini yangilash
+        // 1. Instruktor statusini 'busy' qilish (VAQT HISOBLANMAYDI!)
         await _supabase.from('instructors').update({
             status: 'busy',
             last_finish_time: finishDate.toISOString(),
             updated_at: now.toISOString()
         }).eq('id', session.id);
 
-        // 2. Chekni o'chirish
+        // 2. Chekni faolsizlantirish va boshlash vaqtini belgilash
         await _supabase.from('school_services').update({
             is_active: false,
             instructor_id: session.id,
             service_start_time: now.toISOString()
         }).eq('unique_id', currentStudent.unique_id);
 
-        startTimerDisplay(hours * 3600000);
+        startTimerDisplay(Number(currentStudent.hours) * 3600000);
         closeModal();
+        updateInstStats();
+
     } catch (err) {
         alert("Xatolik: " + err.message);
     }
 }
 
-/**
- * 8. TAYMER VA HISOBLASH
- */
 function startTimerDisplay(durationMs) {
     const readerDiv = document.getElementById('reader');
     isScanning = false;
@@ -217,13 +235,15 @@ function startTimerDisplay(durationMs) {
 
         if (durationMs <= 0) {
             clearInterval(activeTimer);
-            playSound('finish');
             const session = JSON.parse(localStorage.getItem('inst_session'));
-            await stopLessonAndCalculate(session.id);
+            await stopLessonAndCalculate(session.id); // Tugaganda hisoblash
         }
     }, 1000);
 }
 
+/**
+ * VAQTNI HISOBLASH - FAQAT TUGAGANDA YOKI TO'XTATILGANDA ISHLAYDI
+ */
 async function stopLessonAndCalculate(instructorId) {
     try {
         const { data: inst } = await _supabase.from('instructors').select('*').eq('id', instructorId).single();
@@ -231,22 +251,28 @@ async function stopLessonAndCalculate(instructorId) {
             .select('*').eq('instructor_id', instructorId).eq('is_active', false)
             .order('service_start_time', { ascending: false }).limit(1).single();
 
-        if (inst && service) {
+        if (inst && service && service.service_start_time) {
             const startTime = new Date(service.service_start_time);
             const now = new Date();
             let diffMins = Math.floor((now - startTime) / 60000);
 
-            // Limitdan oshib ketmasligi uchun
+            // Maksimal vaqtdan oshmasligi kerak
             const maxMins = service.hours * 60;
             if (diffMins > maxMins) diffMins = maxMins;
+            if (diffMins < 0) diffMins = 0;
+
+            // Statistikani yangilash
+            let newDaily = (inst.daily_hours || 0) + diffMins;
+            let earnedNow = (diffMins / 60) * 40000;
 
             await _supabase.from('instructors').update({
                 status: 'active',
-                daily_hours: (inst.daily_hours || 0) + diffMins,
-                earned_money: (inst.earned_money || 0) + ((diffMins / 60) * 40000),
+                daily_hours: newDaily,
+                earned_money: (inst.earned_money || 0) + earnedNow,
                 last_finish_time: null
             }).eq('id', instructorId);
 
+            // Tarixga yozish
             await _supabase.from('services_history').insert([{
                 instructor_id: instructorId,
                 student_name: service.full_name,
@@ -255,20 +281,20 @@ async function stopLessonAndCalculate(instructorId) {
             }]);
         }
         stopProcessLocally();
-    } catch (e) {
-        await _supabase.from('instructors').update({ status: 'active' }).eq('id', instructorId);
-        stopProcessLocally();
+    } catch (err) {
+        console.error(err);
+        await resetInstructorStatus(instructorId);
     }
 }
 
-/**
- * 9. STATISTIKA VA TARIX
- */
-async function updateInstStats() {
-    const sessionStr = localStorage.getItem('inst_session');
-    if(!sessionStr) return;
-    const session = JSON.parse(sessionStr);
+async function resetInstructorStatus(id) {
+    await _supabase.from('instructors').update({ status: 'active', last_finish_time: null }).eq('id', id);
+    stopProcessLocally();
+}
 
+async function updateInstStats() {
+    const session = JSON.parse(localStorage.getItem('inst_session'));
+    if(!session) return;
     const { data: inst } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
     if (inst) {
         if(document.getElementById('total-hours')) document.getElementById('total-hours').innerText = (inst.daily_hours / 60).toFixed(1);
@@ -278,27 +304,16 @@ async function updateInstStats() {
 
 async function loadClientList() {
     const session = JSON.parse(localStorage.getItem('inst_session'));
-    const { data } = await _supabase.from('services_history').select('*').eq('instructor_id', session.id).order('created_at', {ascending: false}).limit(5);
+    if(!session) return;
+    const { data } = await _supabase.from('services_history').select('*').eq('instructor_id', session.id).order('created_at', {ascending: false});
     const listDiv = document.getElementById('client-list');
     if (listDiv && data) {
-        listDiv.innerHTML = data.map(s => `
+        listDiv.innerHTML = data.length > 0 ? data.map(s => `
             <div class="stat-card" style="text-align:left; margin-bottom:10px; border-left:4px solid var(--accent)">
-                <b>${s.student_name}</b> <span style="float:right;">+${s.hours} s</span>
-            </div>`).join('');
+                <b>${s.student_name}</b><br><small>${new Date(s.created_at).toLocaleString()}</small>
+                <span style="float:right; color:var(--accent);">+${s.hours} s</span>
+            </div>`).join('') : '<p>Mijozlar yo\'q</p>';
     }
-}
-
-/**
- * 10. YORDAMCHI FUNKSIYALAR
- */
-function playSound(type) {
-    try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        osc.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 1);
-    } catch (e) {}
 }
 
 function closeModal() {
