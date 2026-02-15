@@ -29,16 +29,16 @@ document.addEventListener('DOMContentLoaded', () => {
 function checkSession() {
     const sessionStr = localStorage.getItem('inst_session');
     if (!sessionStr) {
-        window.location.replace('index.html'); // Sessiya bo'lmasa login sahifasiga qaytaradi
+        window.location.replace('index.html');
         return;
     }
     const session = JSON.parse(sessionStr);
     const nameEl = document.getElementById('inst-name');
-    if (nameEl) nameEl.innerText = session.full_name; // Instruktor ismini ekranga chiqarish
+    if (nameEl) nameEl.innerText = session.full_name;
 }
 
 /**
- * Ovozli signallar yaratish (Dars tugayotganda ogohlantirish uchun)
+ * Ovozli signallar yaratish
  */
 function playSound(type) {
     try {
@@ -48,12 +48,12 @@ function playSound(type) {
         osc.connect(gain);
         gain.connect(ctx.destination);
 
-        if (type === 'warning') { // 10 va 5 daqiqa qolganda chalinadigan signal
+        if (type === 'warning') {
             osc.frequency.value = 440;
             gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
             osc.start();
             osc.stop(ctx.currentTime + 0.8);
-        } else if (type === 'finish') { // Dars to'liq tugaganda chalinadigan signal
+        } else if (type === 'finish') {
             osc.frequency.value = 580;
             gain.gain.setValueAtTime(0.1, ctx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 3);
@@ -64,7 +64,7 @@ function playSound(type) {
 }
 
 /**
- * Darsni sinxronizatsiya qilish: Sahifa yangilansa ham taymer o'chib ketmasligi uchun
+ * Darsni sinxronizatsiya qilish
  */
 async function syncActiveLesson() {
     const session = JSON.parse(localStorage.getItem('inst_session'));
@@ -76,9 +76,10 @@ async function syncActiveLesson() {
         const diff = finishTime - now;
 
         if (diff > 0) {
-            startTimerDisplay(diff); // Taymerni tiklash
+            startTimerDisplay(diff);
         } else {
-            await resetInstructorStatus(session.id); // Vaqt tugagan bo'lsa ochish
+            // Agar vaqt o'tib ketgan bo'lsa, avtomatik yopish (to'liq soat hisoblanadi)
+            await stopLessonAndCalculate(session.id);
         }
     }
 }
@@ -86,17 +87,11 @@ async function syncActiveLesson() {
 // QR Skaner obyekti
 const html5QrCode = new Html5Qrcode("reader");
 
-/**
- * Skanerni kameraga ulab ishga tushirish
- */
 function initScanner() {
     html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, onScanSuccess)
         .catch(err => console.error("Skaner xatosi:", err));
 }
 
-/**
- * QR kod muvaffaqiyatli skanerlanganda bajariladigan amal
- */
 async function onScanSuccess(decodedText) {
     if (!isScanning) return;
 
@@ -104,12 +99,8 @@ async function onScanSuccess(decodedText) {
     const { data: inst } = await _supabase.from('instructors').select('status, last_finish_time').eq('id', session.id).single();
 
     if (inst && inst.status === 'busy') {
-        const remainingMs = new Date(inst.last_finish_time) - new Date();
-        const remainingMin = Math.ceil(remainingMs / 60000);
-        if (remainingMin > 0) {
-            alert(`Siz hozir bandsiz! Dars tugashiga ${remainingMin} daqiqa bor.`);
-            return;
-        }
+        alert("Siz hozir bandsiz! Oldin joriy darsni tugatishingiz kerak.");
+        return;
     }
 
     isScanning = false;
@@ -124,9 +115,6 @@ async function onScanSuccess(decodedText) {
     }
 }
 
-/**
- * Talaba va dars ma'lumotlarini ko'rsatuvchi oyna (Modal)
- */
 function showStudentModal(service) {
     const modal = document.getElementById('studentModal');
     const dataArea = document.getElementById('modal-data');
@@ -155,7 +143,7 @@ function showStudentModal(service) {
 }
 
 /**
- * Darsni tasdiqlash va soatlarni hisoblash funksiyasi
+ * Darsni tasdiqlash - BU YERDA VAQT HISOBLANMAYDI, FAQAT BOSHLANADI
  */
 async function confirmService() {
     if (!currentStudent) return;
@@ -166,61 +154,31 @@ async function confirmService() {
     try {
         const session = JSON.parse(localStorage.getItem('inst_session'));
         const hoursFromTicket = Number(currentStudent.hours);
-        const minutesToAdd = hoursFromTicket * 60;
-
         const now = new Date();
         const finishDate = new Date(now.getTime() + (hoursFromTicket * 3600000));
-        const finishStr = finishDate.toISOString();
 
-        // 1. Instruktor ma'lumotlarini olish
-        const { data: inst, error: instError } = await _supabase
-            .from('instructors')
-            .select('*')
-            .eq('id', session.id)
-            .single();
-
-        if (instError) throw instError;
-
-        // 2. Yangi kun/oy tekshiruvi
-        const lastUpdate = inst.updated_at ? new Date(inst.updated_at) : new Date(0);
-        const isNewDay = lastUpdate.toDateString() !== now.toDateString();
-        const isNewMonth = lastUpdate.getMonth() !== now.getMonth() || lastUpdate.getFullYear() !== now.getFullYear();
-
-        let newDaily = isNewDay ? minutesToAdd : (inst.daily_hours || 0) + minutesToAdd;
-        let newMonthly = isNewMonth ? minutesToAdd : (inst.monthly_hours || 0) + minutesToAdd;
-
-        // 3. Instruktor statusini yangilash
+        // 1. Instruktor holatini 'busy' qilish va boshlash vaqtini saqlash
         const { error: updateError } = await _supabase
             .from('instructors')
             .update({
                 status: 'busy',
-                last_finish_time: finishStr,
-                daily_hours: newDaily,
-                monthly_hours: newMonthly,
-                earned_money: (inst.earned_money || 0) + (hoursFromTicket * 40000),
-                updated_at: now.toISOString()
+                last_finish_time: finishDate.toISOString(),
+                updated_at: now.toISOString() // Dars boshlangan vaqt
             })
             .eq('id', session.id);
 
         if (updateError) throw updateError;
 
-        // 4. Chekni Monitoring paneli uchun yangilash (Muhim o'zgarish)
+        // 2. Chekni faolsizlantirish
         await _supabase
             .from('school_services')
             .update({
                 is_active: false,
                 instructor_id: session.id,
-                last_finish_time: finishStr
+                last_finish_time: finishDate.toISOString(),
+                service_start_time: now.toISOString() // Hisob-kitob uchun kerak
             })
             .eq('unique_id', currentStudent.unique_id);
-
-        // 5. Tarixga yozish
-        await _supabase.from('services_history').insert([{
-            instructor_id: session.id,
-            student_name: currentStudent.full_name,
-            hours: hoursFromTicket,
-            service_id: currentStudent.unique_id
-        }]);
 
         startTimerDisplay(hoursFromTicket * 3600000);
         closeModal();
@@ -235,7 +193,7 @@ async function confirmService() {
 }
 
 /**
- * Taymerni ekranga chiqarish va teskari hisoblash
+ * Taymerni ekranga chiqarish
  */
 function startTimerDisplay(durationMs) {
     const readerDiv = document.getElementById('reader');
@@ -258,31 +216,87 @@ function startTimerDisplay(durationMs) {
                 <p style="margin-top:15px; color:#94a3b8;">Hozir skanerlash bloklangan</p>
             </div>`;
 
-        if (m === 10 && s === 0 && h === 0) playSound('warning');
-        if (m === 5 && s === 0 && h === 0) playSound('warning');
-
         if (durationMs <= 0) {
             clearInterval(activeTimer);
             playSound('finish');
             const session = JSON.parse(localStorage.getItem('inst_session'));
-            await resetInstructorStatus(session.id);
-            location.reload();
+            await stopLessonAndCalculate(session.id);
         }
     }, 1000);
 }
 
 /**
- * Instruktor darsni tugatgandan so'ng holatini 'active' ga qaytarish
+ * TO'XTATISH VA HAQIQIY ISHLANGAN VAQTNI HISOBLASH
+ * Bu funksiya monitoringda to'xtatish tugmasi bosilganda yoki vaqt tugaganda ishlaydi
  */
+async function stopLessonAndCalculate(instructorId) {
+    try {
+        // 1. Instruktor va uning joriy darsini olish
+        const { data: inst } = await _supabase.from('instructors').select('*').eq('id', instructorId).single();
+        const { data: service } = await _supabase
+            .from('school_services')
+            .select('*')
+            .eq('instructor_id', instructorId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (!inst || !service || !service.service_start_time) {
+            await resetInstructorStatus(instructorId);
+            return;
+        }
+
+        const startTime = new Date(service.service_start_time);
+        const now = new Date();
+
+        // Haqiqiy o'tgan vaqt (daqiqa)
+        let diffMs = now - startTime;
+        let diffMins = Math.floor(diffMs / 60000);
+
+        // Agar vaqt kutilganidan ko'proq bo'lsa (masalan taymer tugab o'tib ketgan bo'lsa), chekdagi soatdan oshmasligi kerak
+        const maxMins = service.hours * 60;
+        if (diffMins > maxMins) diffMins = maxMins;
+        if (diffMins < 0) diffMins = 0;
+
+        // 2. Statistikani yangilash
+        const lastUpdate = inst.updated_at ? new Date(inst.updated_at) : new Date();
+        const isNewDay = lastUpdate.toDateString() !== now.toDateString();
+
+        let newDaily = isNewDay ? diffMins : (inst.daily_hours || 0) + diffMins;
+        let earnedNow = (diffMins / 60) * 40000; // Proporsional ish haqi
+
+        await _supabase.from('instructors').update({
+            status: 'active',
+            daily_hours: newDaily,
+            earned_money: (inst.earned_money || 0) + earnedNow,
+            last_finish_time: null
+        }).eq('id', instructorId);
+
+        // 3. Tarixga yozish
+        await _supabase.from('services_history').insert([{
+            instructor_id: instructorId,
+            student_name: service.full_name,
+            hours: (diffMins / 60).toFixed(1),
+            service_id: service.unique_id
+        }]);
+
+        // 4. Chekni to'liq yakunlash
+        await _supabase.from('school_services').update({ last_finish_time: now.toISOString() }).eq('id', service.id);
+
+        location.reload();
+
+    } catch (err) {
+        console.error("Xatolik stopLesson:", err.message);
+        await resetInstructorStatus(instructorId);
+    }
+}
+
 async function resetInstructorStatus(id) {
-    await _supabase.from('instructors').update({ status: 'active' }).eq('id', id);
+    await _supabase.from('instructors').update({ status: 'active', last_finish_time: null }).eq('id', id);
     isScanning = true;
     activeTimer = null;
 }
 
-/**
- * Instruktorning umumiy statistikasini yangilash
- */
 async function updateInstStats() {
     const sessionStr = localStorage.getItem('inst_session');
     if(!sessionStr) return;
@@ -290,15 +304,13 @@ async function updateInstStats() {
 
     const { data: inst } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
     if (inst) {
+        // Ekranda soat ko'rinishida chiqarish (daqiqalarni 60 ga bo'lib)
         if(document.getElementById('total-hours')) document.getElementById('total-hours').innerText = (inst.daily_hours / 60).toFixed(1);
         if(document.getElementById('total-clients')) document.getElementById('total-clients').innerText = inst.total_clients || 0;
         if(document.getElementById('estimated-salary')) document.getElementById('estimated-salary').innerText = (inst.earned_money || 0).toLocaleString() + " UZS";
     }
 }
 
-/**
- * Instruktor bajargan ishlar ro'yxatini yuklash
- */
 async function loadClientList() {
     const sessionStr = localStorage.getItem('inst_session');
     if(!sessionStr) return;
@@ -321,9 +333,6 @@ async function loadClientList() {
     }
 }
 
-/**
- * Modal oynani yopish
- */
 function closeModal() {
     const modal = document.getElementById('studentModal');
     if (modal) modal.style.display = 'none';
@@ -331,14 +340,8 @@ function closeModal() {
     currentStudent = null;
 }
 
-/**
- * Chiqish jarayoni
- */
 function logout() { confirmLogout(); }
 
-/**
- * Chiqishni tasdiqlash oynasi
- */
 function confirmLogout() {
     isScanning = false;
     const modal = document.getElementById('studentModal');
@@ -353,9 +356,6 @@ function confirmLogout() {
     modal.style.display = 'flex';
 }
 
-/**
- * LocalStorage ni tozalab login sahifasiga yuborish
- */
 function executeLogout() {
     localStorage.clear();
     window.location.replace('index.html');
