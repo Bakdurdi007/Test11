@@ -68,18 +68,17 @@ function playSound(type) {
  */
 async function syncActiveLesson() {
     const session = JSON.parse(localStorage.getItem('inst_session'));
-    // Bazadan instruktorning hozirgi holatini tekshirish
     const { data: inst } = await _supabase.from('instructors').select('status, last_finish_time').eq('id', session.id).single();
 
-    if (inst && inst.status === 'busy') {
+    if (inst && inst.status === 'busy' && inst.last_finish_time) {
         const finishTime = new Date(inst.last_finish_time).getTime();
         const now = new Date().getTime();
         const diff = finishTime - now;
 
         if (diff > 0) {
-            startTimerDisplay(diff); // Agar vaqt tugamagan bo'lsa, taymerni qolgan vaqtdan boshlash
+            startTimerDisplay(diff); // Taymerni tiklash
         } else {
-            await resetInstructorStatus(session.id); // Vaqt o'tib ketgan bo'lsa statusni ochish
+            await resetInstructorStatus(session.id); // Vaqt tugagan bo'lsa ochish
         }
     }
 }
@@ -99,26 +98,26 @@ function initScanner() {
  * QR kod muvaffaqiyatli skanerlanganda bajariladigan amal
  */
 async function onScanSuccess(decodedText) {
-    if (!isScanning) return; // Agar hozirda boshqa amal bajarilayotgan bo'lsa to'xtatish
+    if (!isScanning) return;
 
     const session = JSON.parse(localStorage.getItem('inst_session'));
     const { data: inst } = await _supabase.from('instructors').select('status, last_finish_time').eq('id', session.id).single();
 
-    // Instruktor bandligini tekshirish
     if (inst && inst.status === 'busy') {
         const remainingMs = new Date(inst.last_finish_time) - new Date();
         const remainingMin = Math.ceil(remainingMs / 60000);
-        alert(`Siz hozir bandsiz! Dars tugashiga ${remainingMin} daqiqa bor.`);
-        return;
+        if (remainingMin > 0) {
+            alert(`Siz hozir bandsiz! Dars tugashiga ${remainingMin} daqiqa bor.`);
+            return;
+        }
     }
 
     isScanning = false;
-    // Bazadan skanerlangan ID bo'yicha chekni qidirish
     const { data: service } = await _supabase.from('school_services').select('*').eq('unique_id', decodedText).maybeSingle();
 
     if (service) {
         currentStudent = service;
-        showStudentModal(service); // Talaba ma'lumotlarini ko'rsatish
+        showStudentModal(service);
     } else {
         alert("Chek topilmadi yoki xato QR kod.");
         isScanning = true;
@@ -133,7 +132,6 @@ function showStudentModal(service) {
     const dataArea = document.getElementById('modal-data');
     const footerArea = document.getElementById('modal-footer-btns');
 
-    // Agar chek avval ishlatilgan bo'lsa (is_active: false)
     if (service.is_active === false) {
         dataArea.innerHTML = `
             <div style="text-align:center; padding: 20px;">
@@ -142,7 +140,6 @@ function showStudentModal(service) {
             </div>`;
         footerArea.innerHTML = `<button onclick="closeModal()" class="btn-cancel" style="width:100%">YOPISH</button>`;
     } else {
-        // Yangi chek bo'lsa ma'lumotlarni chiqarish
         dataArea.innerHTML = `
             <div class="mashgulot-info" style="text-align:left; line-height:1.8;">
                 <h3 style="color:var(--accent); text-align:center;">Dars ma'lumotlari:</h3>
@@ -168,13 +165,14 @@ async function confirmService() {
 
     try {
         const session = JSON.parse(localStorage.getItem('inst_session'));
-        const hoursFromTicket = Number(currentStudent.hours); // Masalan: 2 soat
-        const minutesToAdd = hoursFromTicket * 60; // Minutga o'tkazish
+        const hoursFromTicket = Number(currentStudent.hours);
+        const minutesToAdd = hoursFromTicket * 60;
 
         const now = new Date();
         const finishDate = new Date(now.getTime() + (hoursFromTicket * 3600000));
+        const finishStr = finishDate.toISOString();
 
-        // 1. Instruktorning joriy ma'lumotlarini olish
+        // 1. Instruktor ma'lumotlarini olish
         const { data: inst, error: instError } = await _supabase
             .from('instructors')
             .select('*')
@@ -183,42 +181,40 @@ async function confirmService() {
 
         if (instError) throw instError;
 
-        // 2. Yangi kun yoki yangi oy ekanligini tekshirish
+        // 2. Yangi kun/oy tekshiruvi
         const lastUpdate = inst.updated_at ? new Date(inst.updated_at) : new Date(0);
         const isNewDay = lastUpdate.toDateString() !== now.toDateString();
         const isNewMonth = lastUpdate.getMonth() !== now.getMonth() || lastUpdate.getFullYear() !== now.getFullYear();
 
-        // 3. Soatlarni hisoblash (Yangi kun bo'lsa 0 dan boshlash)
         let newDaily = isNewDay ? minutesToAdd : (inst.daily_hours || 0) + minutesToAdd;
         let newMonthly = isNewMonth ? minutesToAdd : (inst.monthly_hours || 0) + minutesToAdd;
 
-        // 4. Bazani yangilash (Instruktor holati)
+        // 3. Instruktor statusini yangilash
         const { error: updateError } = await _supabase
             .from('instructors')
             .update({
                 status: 'busy',
-                last_finish_time: finishDate.toISOString(),
+                last_finish_time: finishStr,
                 daily_hours: newDaily,
                 monthly_hours: newMonthly,
-                earned_money: (inst.earned_money || 0) + (hoursFromTicket * 40000), // Tarif bo'yicha
+                earned_money: (inst.earned_money || 0) + (hoursFromTicket * 40000),
                 updated_at: now.toISOString()
             })
             .eq('id', session.id);
 
         if (updateError) throw updateError;
 
-        // 5. Chekni yopish va Nazorat paneli uchun ma'lumotlarni biriktirish
-        // BU YERDA: is_active: false bo'ladi, lekin monitoring ko'rishi uchun id va vaqt yoziladi
+        // 4. Chekni Monitoring paneli uchun yangilash (Muhim o'zgarish)
         await _supabase
             .from('school_services')
             .update({
                 is_active: false,
-                instructor_id: session.id,            // Monitoring uchun kerak
-                last_finish_time: finishDate.toISOString() // Taymer uchun kerak
+                instructor_id: session.id,
+                last_finish_time: finishStr
             })
             .eq('unique_id', currentStudent.unique_id);
 
-        // 6. Tarixga yozish
+        // 5. Tarixga yozish
         await _supabase.from('services_history').insert([{
             instructor_id: session.id,
             student_name: currentStudent.full_name,
@@ -226,7 +222,6 @@ async function confirmService() {
             service_id: currentStudent.unique_id
         }]);
 
-        // Taymerni mobil ilovada ham ishga tushirish
         startTimerDisplay(hoursFromTicket * 3600000);
         closeModal();
         updateInstStats();
@@ -254,7 +249,6 @@ function startTimerDisplay(durationMs) {
         const m = Math.floor((durationMs % 3600000) / 60000);
         const s = Math.floor((durationMs % 60000) / 1000);
 
-        // Taymer dizayni (skaner o'rnida ko'rinadi)
         readerDiv.innerHTML = `
             <div style="text-align:center; padding:40px; background:#1e293b; color:white; border-radius:15px; border:2px solid #f59e0b;">
                 <h3 style="color:#f59e0b; margin-bottom:15px;">MASHG'ULOT KETMOQDA</h3>
@@ -264,17 +258,15 @@ function startTimerDisplay(durationMs) {
                 <p style="margin-top:15px; color:#94a3b8;">Hozir skanerlash bloklangan</p>
             </div>`;
 
-        // Dars tugashiga yaqin qolganidagi ovozli signallar
         if (m === 10 && s === 0 && h === 0) playSound('warning');
         if (m === 5 && s === 0 && h === 0) playSound('warning');
 
-        // Vaqt tugaganda
         if (durationMs <= 0) {
             clearInterval(activeTimer);
             playSound('finish');
             const session = JSON.parse(localStorage.getItem('inst_session'));
-            await resetInstructorStatus(session.id); // Instruktorni bo'shatish
-            location.reload(); // Sahifani yangilab skanerni qayta yoqish
+            await resetInstructorStatus(session.id);
+            location.reload();
         }
     }, 1000);
 }
@@ -289,7 +281,7 @@ async function resetInstructorStatus(id) {
 }
 
 /**
- * Instruktorning umumiy statistikasini (soat, mijoz, pul) yangilash
+ * Instruktorning umumiy statistikasini yangilash
  */
 async function updateInstStats() {
     const sessionStr = localStorage.getItem('inst_session');
@@ -298,14 +290,14 @@ async function updateInstStats() {
 
     const { data: inst } = await _supabase.from('instructors').select('*').eq('id', session.id).single();
     if (inst) {
-        if(document.getElementById('total-hours')) document.getElementById('total-hours').innerText = inst.daily_hours || 0;
+        if(document.getElementById('total-hours')) document.getElementById('total-hours').innerText = (inst.daily_hours / 60).toFixed(1);
         if(document.getElementById('total-clients')) document.getElementById('total-clients').innerText = inst.total_clients || 0;
         if(document.getElementById('estimated-salary')) document.getElementById('estimated-salary').innerText = (inst.earned_money || 0).toLocaleString() + " UZS";
     }
 }
 
 /**
- * Instruktor bajargan ishlar ro'yxatini (tarixni) bazadan yuklash
+ * Instruktor bajargan ishlar ro'yxatini yuklash
  */
 async function loadClientList() {
     const sessionStr = localStorage.getItem('inst_session');
@@ -333,8 +325,9 @@ async function loadClientList() {
  * Modal oynani yopish
  */
 function closeModal() {
-    document.getElementById('studentModal').style.display = 'none';
-    if (!activeTimer) isScanning = true; // Agar dars ketmayotgan bo'lsa skanerni davom ettirish
+    const modal = document.getElementById('studentModal');
+    if (modal) modal.style.display = 'none';
+    if (!activeTimer) isScanning = true;
     currentStudent = null;
 }
 
@@ -354,8 +347,8 @@ function confirmLogout() {
         <p style="text-align:center; color:#94a3b8;">Rostdan ham tizimdan chiqmoqchimisiz?</p>`;
     document.getElementById('modal-footer-btns').innerHTML = `
         <div style="display:flex; gap:10px; width:100%;">
-            <button onclick="executeLogout()" class="btn-danger-modal" style="flex:1;">HA</button>
-            <button onclick="closeModal()" class="btn-cancel" style="flex:1;">YO'Q</button>
+            <button onclick="executeLogout()" class="btn-danger-modal" style="flex:1; background:#ef4444; color:white; border:none; padding:10px; border-radius:8px;">HA</button>
+            <button onclick="closeModal()" class="btn-cancel" style="flex:1; background:#64748b; color:white; border:none; padding:10px; border-radius:8px;">YO'Q</button>
         </div>`;
     modal.style.display = 'flex';
 }
